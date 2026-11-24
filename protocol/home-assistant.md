@@ -1,13 +1,13 @@
 # Home Assistant and two computers
 
-Implementation is built, unit-tested and flashed to LightController (2026-09-24). USB
+Implementation is built, unit-tested and flashed to Light Rig (2026-09-24). USB
 boot/regression checks pass; not yet validated against a real MQTT broker or
 Home Assistant. The Mac application and firmware must be updated
 together. Older firmware does not implement the new presence-driven automation.
 
 ## Connections
 
-LightController owns MQTT, discovery, client leases and automatic lighting. The Mac only
+Light Rig owns MQTT, discovery, client leases and automatic lighting. The Mac only
 detects capture activity and sends presence. USB remains available when the board
 is in Router mode: Mac A can use USB and Mac B WebSocket over the router. Both Macs
 can instead use WebSocket. This does not share the Cam Link video signal.
@@ -57,7 +57,7 @@ Automatic light turns on while at least one fresh client reports a call with
 off another client's automatic light. When all automatic claims end/expire,
 light switches off. Explicit manual light controls remain overrides. Do not mix
 old Mac builds (which directly switch light on/off on call transitions) with new ones.
-LightController mode aggregates call/preview independently of automatic-light toggles.
+Light Rig mode aggregates call/preview independently of automatic-light toggles.
 
 ## MQTT configuration and credentials
 
@@ -88,10 +88,10 @@ do not expose the board to the Internet or an untrusted Wi-Fi network.
 
 ## Discovery and state
 
-Device ID derives from the LightController MAC: `canonrig_<12 hex digits>`.
+Device ID derives from the Light Rig MAC: `canonrig_<12 hex digits>`.
 Discovery: `homeassistant/binary_sensor/<device>/<entity>/config`.
 Data prefix: `canonrig/<device>`. Entity keys: `call`, `camera`,
-`<clientId>_call`, `<clientId>_camera`. All belong to one Canon Rig device.
+`<clientId>_call`, `<clientId>_camera`. All belong to one Light Rig device.
 
 - Discovery retained; regenerated on MQTT connection and HA birth (`homeassistant/status`).
 - States ON/OFF/None, **not retained**, refreshed every 2 seconds, `expire_after=15`.
@@ -117,5 +117,5 @@ ready, Canon `EOS CONTROL READY`, presence/MQTT state, rejection of malformed
 presence/configuration, oversized serial-line recovery. `scripts/presence_smoke.py`
 confirmed no client slots or network/MQTT settings changed. No fake Macs registered.
 
-Still required on hardware: two physical Mac connections; MQTT broker/HA discovery, broker reboot, LightController
+Still required on hardware: two physical Mac connections; MQTT broker/HA discovery, broker reboot, Light Rig
 power loss/LWT, HA restart and Wi-Fi outage/recovery. Do not present these as tested.

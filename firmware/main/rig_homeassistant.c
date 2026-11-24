@@ -121,6 +121,8 @@ void rig_homeassistant_usb_settings(cJSON *p) {
     xSemaphoreGive(s_lock);
 }
 
+const char *rig_homeassistant_device_id(void) { return s_device; }
+
 void rig_homeassistant_json(cJSON *parent) {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     cJSON *p = cJSON_AddObjectToObject(parent, "homeAssistant");
@@ -168,8 +170,8 @@ static bool discover(esp_mqtt_client_handle_t client, const char *key, const cha
     cJSON *broker = cJSON_CreateObject(); cJSON_AddStringToObject(broker, "topic", s_availability); cJSON_AddItemToArray(a, broker);
     cJSON *source = cJSON_CreateObject(); cJSON_AddStringToObject(source, "topic", available); cJSON_AddItemToArray(a, source);
     cJSON *d = cJSON_AddObjectToObject(p, "device");
-    cJSON_AddStringToObject(d, "identifiers", s_device); cJSON_AddStringToObject(d, "name", "LightController");
-    cJSON_AddStringToObject(d, "manufacturer", "Canon Rig"); cJSON_AddStringToObject(d, "model", "LightController (T8 ESP32-S2)");
+    cJSON_AddStringToObject(d, "identifiers", s_device); cJSON_AddStringToObject(d, "name", "Light Rig");
+    cJSON_AddStringToObject(d, "manufacturer", "Light Rig"); cJSON_AddStringToObject(d, "model", "Light Rig (T8 ESP32-S2)");
     char *json = cJSON_PrintUnformatted(p); bool ok = json && publish(client, topic, json, true);
     free(json); cJSON_Delete(p); return ok;
 }

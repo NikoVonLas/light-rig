@@ -9,7 +9,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         self.onClose = onClose
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 460),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Знакомство с Canon Rig"
+        window.title = "Знакомство с Light Rig"
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: OnboardingView(model: model, flow: model.onboarding) { [weak window] height in
             guard let window, height > 0 else { return }
@@ -55,7 +55,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 22) {
             HStack(spacing: 8) {
                 Image(systemName: "video").font(.system(size: 23, weight: .medium)).foregroundStyle(.secondary)
-                Text("Canon Rig").font(.system(size: 15, weight: .semibold))
+                Text("Light Rig").font(.system(size: 15, weight: .semibold))
                 Spacer()
                 Text(flow.step == .invitation ? "2 из 2" : "1 из 2")
                     .font(.subheadline).foregroundStyle(.secondary)
@@ -96,9 +96,9 @@ struct OnboardingView: View {
 
     private var connection: some View {
         VStack(alignment: .leading, spacing: 22) {
-            title("LightController найден", detail: "Настроим подключение один раз. Потом приложение будет само выбирать USB или Wi-Fi.")
+            title("Light Rig найден", detail: "Настроим подключение один раз. Потом приложение будет само выбирать USB или Wi-Fi.")
             VStack(alignment: .leading, spacing: 14) {
-                Label("Mac → встроенный USB-C LightController", systemImage: "laptopcomputer")
+                Label("Mac → встроенный USB-C Light Rig", systemImage: "laptopcomputer")
                 Label("Canon → отдельный USB-разъём", systemImage: "camera")
                 Text("Разъём для Canon не подключай к компьютеру: он предназначен для камеры.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -121,7 +121,7 @@ struct OnboardingView: View {
 
     private var wifi: some View {
         VStack(alignment: .leading, spacing: 20) {
-            title("Подключение к Wi-Fi", detail: "Выбери домашнюю сеть 2,4 ГГц. Настройки сохранятся на LightController — повторно вводить их не придётся.")
+            title("Подключение к Wi-Fi", detail: "Выбери домашнюю сеть 2,4 ГГц. Настройки сохранятся на Light Rig — повторно вводить их не придётся.")
             VStack(alignment: .leading, spacing: 9) {
                 HStack {
                     Text("Сеть").fontWeight(.medium)
@@ -202,7 +202,7 @@ struct OnboardingView: View {
 
     private var waiting: some View {
         VStack(alignment: .leading, spacing: 22) {
-            title(networkFailed ? "Пока не подключились" : "Подключаем LightController", detail: "После сохранения сети плата перезапустится. Окно продолжит настройку, когда LightController подтвердит подключение.")
+            title(networkFailed ? "Пока не подключились" : "Подключаем Light Rig", detail: "После сохранения сети плата перезапустится. Окно продолжит настройку, когда Light Rig подтвердит подключение.")
             if !networkFailed { ProgressView().controlSize(.large) }
             switch model.client.networkSetupStatus {
             case .failed(let message): Text(message).foregroundStyle(.orange)
@@ -238,7 +238,7 @@ struct OnboardingView: View {
     }
 
     private var disconnected: some View {
-        Label("Подключи этот LightController к Mac встроенным USB-C.", systemImage: "cable.connector")
+        Label("Подключи этот Light Rig к Mac встроенным USB-C.", systemImage: "cable.connector")
             .font(.callout).foregroundStyle(.orange)
     }
 }

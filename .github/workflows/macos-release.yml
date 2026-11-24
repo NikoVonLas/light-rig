@@ -1,4 +1,4 @@
-name: Canon Rig for macOS
+name: Light Rig for macOS
 on:
   push:
     tags: ['v*']
@@ -22,15 +22,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Build LightController OTA image
+      - name: Build Light Rig OTA image
         run: |
           docker run --rm -v "$GITHUB_WORKSPACE:/project" -w /project/firmware \
             espressif/idf:v6.0.3 idf.py -DIDF_TARGET=esp32s2 build
-          cp firmware/build/canon_rig_controller.bin LightController-esp32s2.bin
+          cp firmware/build/light_rig.bin Light-Rig-esp32s2.bin
       - uses: actions/upload-artifact@v4
         with:
           name: controller-firmware
-          path: LightController-esp32s2.bin
+          path: Light-Rig-esp32s2.bin
           if-no-files-found: error
 
   release:
@@ -55,35 +55,35 @@ jobs:
             exit 0
           fi
           if gh release view "$TAG" --json assets,isDraft > "$RUNNER_TEMP/release.json"; then
-            if jq -e --arg dmg "Canon-Rig-${TAG#v}.dmg" \
-                '(.isDraft | not) and ([.assets[].name] | contains([$dmg, "appcast.xml", "LightController-esp32s2.bin"]))' "$RUNNER_TEMP/release.json"; then
+            if jq -e --arg dmg "Light-Rig-${TAG#v}.dmg" \
+                '(.isDraft | not) and ([.assets[].name] | contains([$dmg, "appcast.xml", "Light-Rig-esp32s2.bin"]))' "$RUNNER_TEMP/release.json"; then
               echo "skip=true" >> "$GITHUB_OUTPUT"
             fi
           fi
       - name: Test macOS app
         if: steps.existing.outputs.skip != 'true'
         run: swift test --package-path macos
-      - name: Build universal DMG and sign update feed
-        if: steps.existing.outputs.skip != 'true'
-        env:
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-        run: scripts/build_macos_release.sh "$TAG" "$GH_REPO" "$RUNNER_TEMP/assets"
       - uses: actions/download-artifact@v4
         if: steps.existing.outputs.skip != 'true'
         with:
           name: controller-firmware
           path: ${{ runner.temp }}/assets
+      - name: Build universal DMG and sign update feed
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: scripts/build_macos_release.sh "$TAG" "$GH_REPO" "$RUNNER_TEMP/assets"
       - name: Publish verified assets
         if: steps.existing.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          assets=("$RUNNER_TEMP/assets/Canon-Rig-${TAG#v}.dmg" "$RUNNER_TEMP/assets/appcast.xml" "$RUNNER_TEMP/assets/LightController-esp32s2.bin")
+          assets=("$RUNNER_TEMP/assets/Light-Rig-${TAG#v}.dmg" "$RUNNER_TEMP/assets/appcast.xml" "$RUNNER_TEMP/assets/Light-Rig-esp32s2.bin")
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${assets[@]}" --clobber
             if [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" == true ]]; then
               gh release edit "$TAG" --draft=false
             fi
           else
-            gh release create "$TAG" "${assets[@]}" --verify-tag --title "Canon Rig ${TAG#v}" --generate-notes
+            gh release create "$TAG" "${assets[@]}" --verify-tag --title "Light Rig ${TAG#v}" --generate-notes
           fi

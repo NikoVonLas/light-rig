@@ -1,4 +1,7 @@
 #include "rig_display.h"
+#include "rig_ota.h"
+#include "esp_ota_ops.h"
+#include "esp_app_desc.h"
 #include "rig_boot_mark.h"
 
 #include <ctype.h>
@@ -126,15 +129,47 @@ static void draw_text(int x, int y, const char *text, int scale, uint16_t color)
 
 static void display_task(void *argument)
 {
-    (void)argument;
+    // Capture the boot slot state before app_main accepts a healthy new image.
+    bool updated = (bool)(uintptr_t)argument;
     // Keep the boot mark visible while the other peripherals start.
     vTaskDelay(pdMS_TO_TICKS(900));
+    if (updated) {
+        fill(rgb565(10, 13, 18));
+        draw_text(16, 26, "FIRMWARE UPDATED", 2, rgb565(99, 204, 79));
+        draw_text(16, 70, esp_app_get_description()->version, 2, rgb565(245, 247, 250));
+        flush_frame();
+        vTaskDelay(pdMS_TO_TICKS(2600));
+    }
     uint32_t previous_revision = 0;
+    int previous_progress = -1;
     int64_t last_change = esp_timer_get_time();
     while (true) {
         rig_snapshot_t state = rig_state_get();
         int64_t now = esp_timer_get_time();
-        if (state.revision != previous_revision) {
+        int progress = rig_ota_progress();
+        if (progress >= 0) {
+            if (progress != previous_progress) {
+                fill(rgb565(10, 13, 18));
+                uint16_t white = rgb565(245, 247, 250), green = rgb565(99, 204, 79);
+                draw_text(16, 18, "FIRMWARE UPDATE", 2, white);
+                char label[24];
+                snprintf(label, sizeof(label), "%d / 100", progress);
+                draw_text(16, 51, progress == 100 ? "RESTARTING" : label, 2, green);
+                rectangle(16, 90, LCD_WIDTH - 32, 8, rgb565(48, 52, 58));
+                rectangle(16, 90, (LCD_WIDTH - 32) * progress / 100, 8, green);
+                flush_frame();
+                if (!rig_display_is_awake()) {
+                    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
+                    ESP_ERROR_CHECK(gpio_set_level(PIN_BL, 1));
+                    atomic_store(&s_awake, true);
+                }
+            }
+            previous_progress = progress;
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+        if (state.revision != previous_revision || previous_progress >= 0) {
+            previous_progress = -1;
             last_change = now;
             uint16_t accent = rgb565(53, 199, 89);
             if (state.mode == RIG_ON_CALL) accent = rgb565(255, 69, 58);
@@ -258,7 +293,10 @@ void rig_display_init(void)
     flush_frame();
     ESP_ERROR_CHECK(gpio_set_level(PIN_BL, 1));
     atomic_store(&s_awake, true);
-    if (xTaskCreate(display_task, "rig_display", 4096, NULL, 4, NULL) != pdPASS) {
+    esp_ota_img_states_t boot_state;
+    bool updated = esp_ota_get_state_partition(esp_ota_get_running_partition(), &boot_state) == ESP_OK &&
+                   boot_state == ESP_OTA_IMG_PENDING_VERIFY;
+    if (xTaskCreate(display_task, "rig_display", 4096, (void *)(uintptr_t)updated, 4, NULL) != pdPASS) {
         ESP_LOGE(TAG, "display task creation failed");
         rig_state_set_fault("display task");
     }

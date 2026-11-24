@@ -36,7 +36,7 @@ The MJ33 and T3 observations below concern the original LED board.
 
 ## Onboarding bench — 2026-11-15
 
-- Updated firmware on the physical LightController through CH340 at 115200 baud; esptool
+- Updated firmware on the physical Light Rig through CH340 at 115200 baud; esptool
   verified the written image hash. NVS was preserved. A protected backup of the
   overwritten address range 0x000000–0x19ffff is in the ignored `.artifacts/` folder.
 - Higher-speed flash reads were unreliable on the current USB path; 115200-baud
@@ -51,7 +51,7 @@ The MJ33 and T3 observations below concern the original LED board.
 ## Verified bench state — 2026-09-24
 
 - Canon connected to the separate USB-A socket on GPIO19 D- / GPIO20 D+,
-  VBUS from LightController 5V while LightController is powered only by Mac. Enumeration observed:
+  VBUS from Light Rig 5V while Light Rig is powered only by Mac. Enumeration observed:
   VID:PID `04a9:32e7`, configuration 1, interface 0 alt 0 class 06/01/01.
   Bulk IN `0x81` / OUT `0x02`, max packet 64; interrupt IN `0x83`, packet 8.
   GetDeviceInfo (0x1001) and OpenSession (0x1002, session 1) now succeed on
@@ -90,7 +90,7 @@ Older exploration below is reference, not a description of current wiring.
 
 ## Development board
 
-LightController based on the TTGO T8 ESP32-S2 V1.1 with ST7789 240×135 display, 4 MB flash,
+Light Rig based on the TTGO T8 ESP32-S2 V1.1 with ST7789 240×135 display, 4 MB flash,
 8 MB PSRAM, CH340C, and microSD. Flash and PSRAM sizes must be confirmed with
 `esptool` before the first write.
 
@@ -172,10 +172,10 @@ Before direct drive:
 4. Confirm whether the protocol is WS2812-compatible.
 5. Drive RGB through a 74AHCT125 (or equivalent 3.3→5 V buffer) and 220–470 Ω
    series resistor; drive A/B with correctly sized external logic-level
-   MOSFETs. Do not pass LED current through LightController.
+   MOSFETs. Do not pass LED current through Light Rig.
 
 Firmware capture input is GPIO18. For the universal 3.3/5 V probe, use an
-SN74LVC1G17 powered from LightController 3V3: controller RGB → A, Y → GPIO18, and common
+SN74LVC1G17 powered from Light Rig 3V3: controller RGB → A, Y → GPIO18, and common
 GND. Add a 100 nF capacitor directly between the buffer's VCC and GND. Its input
 is specified as tolerant to 5.5 V; never connect the unknown RGB line directly
 to the ESP32-S2. Send `light.captureStart`, then select one mode on the original

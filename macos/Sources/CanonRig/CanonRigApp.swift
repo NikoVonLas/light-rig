@@ -9,7 +9,7 @@ struct CanonRigApp: App {
         Settings { EmptyView() }
             .commands {
                 CommandGroup(replacing: .appTermination) {
-                    Button("Выйти из Canon Rig") { delegate.model.quit() }
+                    Button("Выйти из Light Rig") { delegate.model.quit() }
                         .keyboardShortcut("q")
                 }
                 CommandGroup(replacing: .appSettings) {

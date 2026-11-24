@@ -22,16 +22,18 @@ struct MenuBarContent: View {
             HStack(spacing: 10) {
                 RigHeaderIcon(onCall: model.onCall)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Canon Rig").font(.system(size: 15, weight: .semibold))
-                    Text(model.client.isConnected ? "LightController · " + model.client.connectionLabel : "Поиск LightController…")
+                    Text("Light Rig").font(.system(size: 15, weight: .semibold))
+                    Text(model.client.isConnected ? "Контроллер · " + model.client.connectionLabel : "Поиск контроллера…")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button { model.reconnect() } label: {
-                    Image(systemName: "arrow.clockwise").frame(width: 24, height: 24)
+                if !model.client.isConnected {
+                    Button { model.reconnect() } label: {
+                        Image(systemName: "arrow.clockwise").frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Повторить поиск контроллера").accessibilityLabel("Повторить поиск контроллера")
                 }
-                .buttonStyle(.borderless)
-                .help("Переподключить LightController").accessibilityLabel("Переподключить LightController")
             }
             .padding(.horizontal, 18).padding(.top, 15)
 
@@ -51,6 +53,7 @@ struct MenuBarContent: View {
             .padding(.horizontal, 10).padding(.vertical, 8)
 
             VStack(spacing: 10) {
+                FirmwareTransferProgress(firmware: model.firmware)
                 connectionRow("Камера", icon: "camera",
                               connected: model.client.isConnected && model.client.state.cameraConnected,
                               detail: model.client.isConnected && model.client.state.cameraConnected ? "Подключена" : "Нет связи")
@@ -375,4 +378,16 @@ struct ControlView: View {
     }
 
 
+}
+
+private struct FirmwareTransferProgress: View {
+    @ObservedObject var firmware: ControllerFirmware
+
+    var body: some View {
+        if let value = firmware.progress {
+            ProgressView(value: Double(value), total: 100) {
+                Text("Обновление Light Rig · \(value)%").font(.caption)
+            }
+        }
+    }
 }

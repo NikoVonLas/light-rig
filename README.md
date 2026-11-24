@@ -1,16 +1,16 @@
-# Canon Rig Controller
+# Light Rig
 
 ## Current working connection modes
 
 - **USB**: built-in CH340 bridge, 115200 baud. Works without Wi-Fi and leaves
   GPIO19/20 dedicated to the separate Canon USB-host connector.
-- **LightController AP**: board creates its own network at `192.168.4.1`; join it manually.
+- **Light Rig AP**: board creates its own network at `192.168.4.1`; join it manually.
 - **Router**: board joins a configured 2.4 GHz WPA2 network; use DHCP IP or
-  `canonrig.local`. Router association still needs verification on the user's network.
+  `lightrig.local`. Router association still needs verification on the user's network.
 
 The Mac automatically prefers USB and falls back to the board's network address.
-For first-time Wi-Fi setup, connect LightController to the Mac over USB and enter the
-2.4 GHz SSID/password in the app. LightController persists them and reconnects after power
+For first-time Wi-Fi setup, connect Light Rig to the Mac over USB and enter the
+2.4 GHz SSID/password in the app. Light Rig persists them and reconnects after power
 cycles. USB stays available in AP/router modes. Mode changes reboot the board
 with RGB OFF. Mac network settings are never changed by the application.
 Fresh boards default to USB-only.
@@ -38,11 +38,11 @@ coordinates are sent.
 
 New: [Home Assistant + two Macs](protocol/home-assistant.md). Firmware flashed;
 USB regression passed. Two physical Macs and a real MQTT/HA connection remain unverified.
-MQTT discovery and multi-client automatic lighting live on LightController. Mac builds
+MQTT discovery and multi-client automatic lighting live on Light Rig. Mac builds
 send independent presence heartbeats; camera-in-call remains unknown during a
 call until consumer-aware detection is implemented. Configure broker credentials and an optional CA over USB. The board stores them in NVS.
 
-- `firmware/` — ESP-IDF firmware for LightController based on the TTGO T8 ESP32-S2 V1.1.
+- `firmware/` — ESP-IDF firmware for Light Rig based on the TTGO T8 ESP32-S2 V1.1.
 - `macos/` — SwiftUI menu-bar/control application.
 - `protocol/` — versioned wire protocol shared by both sides.
 - `hardware/` — wiring, power, and validation notes.

@@ -25,6 +25,8 @@ import Testing
     var selection = RigConnectionSelection()
     let now = Date(timeIntervalSince1970: 100)
     selection.failed(.network("192.0.2.20"), at: now)
+    #expect(selection.next(ports: [], host: "192.0.2.20", at: now) == .network("lightrig.local"))
+    selection.failed(.network("lightrig.local"), at: now)
     #expect(selection.next(ports: [], host: "192.0.2.20", at: now) == .network("canonrig.local"))
     selection.failed(.network("canonrig.local"), at: now)
     #expect(selection.next(ports: [], host: "192.0.2.20", at: now) == .network("192.168.4.1"))
@@ -237,8 +239,8 @@ import Testing
         reply.ok = true
         client.accept(try JSONEncoder().encode(reply))
         #expect(client.state.callLight?.green == (matches ? 157 : 0))
-        #expect(client.profileNotice == (matches ? "Профиль «Созвон» сохранён на LightController"
-                                                : "LightController вернул другой профиль. Повтори сохранение."))
+        #expect(client.profileNotice == (matches ? "Профиль «Созвон» сохранён на Light Rig"
+                                                : "Light Rig вернул другой профиль. Повтори сохранение."))
     }
 }
 
@@ -284,4 +286,79 @@ import Testing
         #expect(restores.count == expectedCount)
         if let restore = restores.first { #expect(restore.payload["slot"] == .number(3)) }
     }
+}
+
+@Test @MainActor func returningFromSettingsReappliesStoredLightOnce() throws {
+    let usb = TestSerial()
+    let client = RigClient(host: "127.0.0.1", defaults: .standard, ports: { ["/dev/cu.usbserial-test"] },
+                           serialFactory: { usb }, now: { Date() })
+    client.connect()
+    defer { client.disconnect() }
+    var reporter = PresenceReporter(clientID: "mac", name: "Mac")
+    for (active, count) in [(true, 1), (false, 1), (true, 2), (true, 2)] {
+        let state: [String: JSONValue] = ["homeAssistant": .object(["deviceId": .string("board")]),
+            "presence": .object(["onCall": .bool(active)]), "lightReady": .bool(true)]
+        try usb.reply(state)
+        let message = reporter.envelope(onCall: active, cameraInCall: active, automatic: true, preview: active)
+        client.sendPresence(message)
+        var reply = WireEnvelope(id: message.id, type: "rig.state", payload: state)
+        reply.ok = true
+        client.accept(try JSONEncoder().encode(reply))
+        #expect(usb.messages.filter { $0.type == "light.applyPreset" }.count == count)
+    }
+}
+
+@Test @MainActor func firmwareTransfersThroughUSBAndConfirmsVersionAfterReconnect() async throws {
+    let usb = TestSerial()
+    var now = Date()
+    let suite = "firmware-test-" + UUID().uuidString
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let client = RigClient(host: nil, defaults: defaults, ports: { ["/dev/cu.usbserial-test"] },
+                           serialFactory: { usb }, now: { now })
+    client.connect()
+    defer { client.disconnect() }
+    let image = try #require(testFirmwareImage())
+    let updates = ControllerFirmware(client: client, image: image, defaults: defaults, now: { now })
+    var board: [String: JSONValue] = ["homeAssistant": .object(["deviceId": .string("test-board")]),
+        "otaProtocol": .number(1), "firmware": .string("0.1.0"), "firmwareTarget": .string("Light-Rig-esp32s2")]
+    try usb.reply(board)
+    updates.observe(videoActive: true)
+    now.addTimeInterval(10)
+    updates.observe(videoActive: true)
+    #expect(!client.firmwareTransferActive)
+    updates.observe(videoActive: false)
+    now.addTimeInterval(5)
+    updates.observe(videoActive: false)
+    var consumed = Set<String>()
+    var received = Data()
+    var stages = [String]()
+    for _ in 0..<200 {
+        try await Task.sleep(for: .milliseconds(10))
+        if let command = usb.messages.last, command.type == "system.ota", consumed.insert(command.id).inserted {
+            guard case .string(let op) = command.payload["op"] else { Issue.record("missing op"); return }
+            stages.append(op)
+            if op == "write" {
+                #expect(command.payload["offset"] == .number(Double(received.count)))
+                guard case .string(let base64) = command.payload["data"] else { Issue.record("missing chunk"); return }
+                received.append(try #require(Data(base64Encoded: base64)))
+            }
+            var ack = WireEnvelope(id: command.id, type: "ack")
+            ack.ok = true
+            client.accept(try JSONEncoder().encode(ack))
+            if op == "finish" {
+                client.disconnect()
+                client.connect()
+                board["firmware"] = .string(image.version)
+                try usb.reply(board)
+            }
+        }
+        if !client.firmwareTransferActive { break }
+    }
+    #expect(stages == ["begin", "write", "write", "finish"])
+    #expect(received == image.bytes)
+    #expect(!client.firmwareTransferActive)
+    #expect(!updates.canRetry)
+    updates.observe(videoActive: false)
+    #expect(!client.firmwareTransferActive)
 }

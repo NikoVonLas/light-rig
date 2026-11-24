@@ -1,16 +1,16 @@
 # macOS controller
 
-Native SwiftUI menu-bar application. It discovers `canonrig.local`, controls the
+Native SwiftUI menu-bar application. It discovers `lightrig.local`, controls the
 rig over WebSocket, and detects calls from public CoreAudio/CoreMediaIO state;
 it never records audio or video.
 
 ```sh
 cd macos
 swift test
-swift run CanonRig
+swift run LightRig
 ```
 
-Light automation follows system-wide video capture, including the Canon Rig preview.
+Light automation follows system-wide video capture, including the Light Rig preview.
 It stays active until the last video consumer releases the camera.
 Detection is debounced for two seconds on entry and three seconds on exit.
 The call-light toggle is in the menu bar panel. The app polls video activity only.
@@ -29,7 +29,7 @@ Automation resends current state after reconnection or being re-enabled.
 Turning automation off leaves manual light control available.
 
 The Mac chooses its connection automatically. It prefers an available USB serial
-connection, then tries the last known router IP, `canonrig.local`, and the LightController
+connection, then tries the last known router IP, `lightrig.local`, and the Light Rig
 access-point address. Only a valid `rig.state` reply confirms the connection.
 Silent/failed routes have a retry cooldown so they cannot block other routes.
 Plugging in USB takes priority; unplugging it resumes network discovery. Camera
@@ -56,7 +56,7 @@ the tour also works when the main window has never been opened. The app starts i
 reopening the running app.
 
 For first setup, connect the board's built-in USB-C to the Mac, enter the 2.4 GHz
-Wi-Fi SSID and password under Network, and save. LightController stores these in NVS and
+Wi-Fi SSID and password under Network, and save. Light Rig stores these in NVS and
 reboots; the Mac clears the password after sending. Leave USB connected until
 the app shows Wi-Fi connected and an IP, then return the board to external power.
 The Mac learns the router IP from board replies. Network credentials are not
@@ -91,14 +91,14 @@ Build the signed local app bundle:
 ../scripts/build_macos_app.sh
 ```
 
-The result is `.build/app/Canon Rig.app`. When the preview is first opened, macOS asks for camera
+The result is `.build/app/Light Rig.app`. When the preview is first opened, macOS asks for camera
 permission; this is required for the direct Cam Link preview. The microphone is
 not recorded: the app only reads CoreAudio process activity for diagnostics.
 
 Interactive-tour verification (2026-11-15): Swift tests passed (33 reported,
 physical USB handshake skipped); release app rebuilt and opened. All six tour
 steps, real focus/light panel opening, highlights, and completion were checked
-in the native app. LightController and Cam Link were unavailable during this UI check;
+in the native app. Light Rig and Cam Link were unavailable during this UI check;
 USB/Wi-Fi invitation transitions were verified in unit tests, not by a new
 provisioning run. Firmware was unchanged. Apple Notes sync was unavailable
 (get-note-content timed out).

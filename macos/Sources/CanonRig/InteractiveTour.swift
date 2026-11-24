@@ -14,7 +14,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 620),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
-        window.title = "Canon Rig"
+        window.title = "Light Rig"
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: 760, height: 520)
         window.contentView = NSHostingView(rootView: ControlView(model: model, flow: model.onboarding))
@@ -202,11 +202,11 @@ struct InteractiveTour: View {
         case .preview:
             "Здесь видео с Cam Link через HDMI. Превью включается на вкладке «Камера». Переход в настройки, закрытие или сворачивание окна освобождает Cam Link."
         case .exposure:
-            "Выдержка, диафрагма и ISO находятся под превью. Нажми на значение, чтобы выбрать другое. Для управления подключи USB камеры к LightController — изменения применяются сразу."
+            "Выдержка, диафрагма и ISO находятся под превью. Нажми на значение, чтобы выбрать другое. Для управления подключи USB камеры к Light Rig — изменения применяются сразу."
         case .focus:
             "Нажми на объект прямо в превью, чтобы камера навела на него резкость. Рамка покажет выбранную точку. В панели «Фокус» можно выбрать режим и область автофокуса или подстроить резкость кнопками «Ближе» и «Дальше»."
         case .light:
-            "Выбери цвет и яркость, затем нажми «Сохранить для созвонов». В меню Canon Rig в строке меню включи «Свет на созвоне», чтобы этот профиль включался при захвате видео. Во время тура автосвет приостановлен."
+            "Выбери цвет и яркость, затем нажми «Сохранить для созвонов». В меню Light Rig в строке меню включи «Свет на созвоне», чтобы этот профиль включался при захвате видео. Во время тура автосвет приостановлен."
         case .settings:
             "На вкладке «Настройки» можно настроить сеть и Home Assistant. USB и Wi-Fi выбираются автоматически. Здесь же можно снова пройти тур."
         }

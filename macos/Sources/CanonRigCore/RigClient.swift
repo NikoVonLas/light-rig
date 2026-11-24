@@ -30,7 +30,7 @@ public final class RigClient: ObservableObject {
     public var connectionMode: RigConnectionMode = .automatic
     @Published public private(set) var activeConnectionMode: RigConnectionMode?
     public var connectionLabel: String {
-        guard isConnected else { return "Поиск LightController…" }
+        guard isConnected else { return "Поиск Light Rig…" }
         return activeConnectionMode == .usb ? "USB" : "Wi-Fi"
     }
     @Published public private(set) var networkSetupStatus: NetworkSetupStatus = .idle
@@ -50,6 +50,33 @@ public final class RigClient: ObservableObject {
     private var receiveLoop: Task<Void, Never>?
     private var sendQueue: Task<Void, Never>?
     private var generation = UUID()
+    var firmwareTransferActive = false
+    var firmwareAddress: String? {
+        if case .network(let address) = endpoint { return address }
+        return Self.isIPv4Address(state.ipAddress) ? state.ipAddress : nil
+    }
+    private var firmwareAck: (id: String, continuation: CheckedContinuation<Void, Error>)?
+    private var firmwareTimeout: Task<Void, Never>?
+    private func completeFirmwareRequest(_ result: Result<Void, Error>) {
+        let pending = firmwareAck
+        firmwareAck = nil
+        firmwareTimeout?.cancel()
+        firmwareTimeout = nil
+        pending?.continuation.resume(with: result)
+    }
+
+    func firmwareCommand(_ payload: [String: JSONValue]) async throws {
+        guard isConnected, firmwareAck == nil else { throw URLError(.notConnectedToInternet) }
+        let message = WireEnvelope(type: "system.ota", payload: payload)
+        try await withCheckedThrowingContinuation { continuation in
+            firmwareAck = (message.id, continuation)
+            firmwareTimeout = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(12)) } catch { return }
+                self?.completeFirmwareRequest(.failure(URLError(.timedOut)))
+            }
+            send(message)
+        }
+    }
     private var lastAttempt = Date.distantPast
     private var serial: (any RigSerialConnection)?
     private let portsProvider: () -> [String]
@@ -58,7 +85,7 @@ public final class RigClient: ObservableObject {
     private let defaults: UserDefaults
     // A rapid relaunch can leave the board in the same aggregate call across Mac sessions.
     private var restoredCallDevices = Set<String>()
-    private var startupPresence: (id: String, device: String, sentAt: Date)?
+    private var presetPresence: (id: String, device: String, sentAt: Date)?
     private var lastHeartbeat = Date.distantPast
     private var lastReply = Date.distantPast
 
@@ -80,7 +107,7 @@ public final class RigClient: ObservableObject {
                 lastAttempt = .distantPast
             }
             // Switch only between commands. Never replay a camera command on another transport.
-            if activeConnectionMode != .usb, pendingCameraID == nil,
+            if activeConnectionMode != .usb, pendingCameraID == nil, !firmwareTransferActive,
                let usb = selection.preferredUSB(ports: ports, at: now()) {
                 connect(to: usb)
                 return
@@ -109,7 +136,7 @@ public final class RigClient: ObservableObject {
         self.portsProvider = ports
         self.serialFactory = serialFactory
         self.now = now
-        self.host = host ?? defaults.string(forKey: "rigLastRouterIP") ?? "canonrig.local"
+        self.host = host ?? defaults.string(forKey: "rigLastRouterIP") ?? "lightrig.local"
     }
 
     private static func isIPv4Address(_ value: String) -> Bool {
@@ -142,7 +169,7 @@ public final class RigClient: ObservableObject {
         guard let target else {
             disconnect()
             lastAttempt = now()
-            lastError = connectionMode == .usb ? "LightController не найден по USB" : "Ищу LightController по USB и Wi-Fi"
+            lastError = connectionMode == .usb ? "Light Rig не найден по USB" : "Ищу Light Rig по USB и Wi-Fi"
             return
         }
         connect(to: target)
@@ -192,7 +219,8 @@ public final class RigClient: ObservableObject {
     }
 
     public func disconnect() {
-        startupPresence = nil
+        completeFirmwareRequest(.failure(URLError(.networkConnectionLost)))
+        presetPresence = nil
         if presetSaveRequest != nil { profileNotice = "Связь прервана до подтверждения сохранения" }
         presetSaveRequest = nil
         usbSettings = nil
@@ -232,7 +260,7 @@ public final class RigClient: ObservableObject {
     public func configureHomeAssistant(enabled: Bool, host: String, port: Int, tls: Bool,
                                        username: String = "", password: String = "", caPEM: String = "") {
         guard isConnected, activeConnectionMode == .usb else { lastError = "Настройка MQTT доступна по USB"; return }
-        guard state.hasPersistentSettings else { mqttNotice = "Обнови прошивку LightController для сохранения настроек"; return }
+        guard state.hasPersistentSettings else { mqttNotice = "Обнови прошивку Light Rig для сохранения настроек"; return }
         guard !enabled || (!host.isEmpty && (1...65535).contains(port)) else { mqttNotice = "Укажи адрес и порт MQTT"; return }
         guard !enabled || (caPEM.utf8.count <= 3072 && username.utf8.count <= 64 && password.utf8.count <= 128 &&
             (tls || (username.isEmpty && password.isEmpty && caPEM.isEmpty)) && (!username.isEmpty || password.isEmpty)) else {
@@ -256,10 +284,11 @@ public final class RigClient: ObservableObject {
     public func sendPresence(_ heartbeat: WireEnvelope) {
         let device = state.deviceID
         if heartbeat.payload["automatic"] != .bool(true) || heartbeat.payload["onCall"] != .bool(true) {
-            startupPresence = nil
+            presetPresence = nil
+            if state.aggregateCall != true { restoredCallDevices.remove(device) }
         } else if isConnected, !device.isEmpty, !restoredCallDevices.contains(device),
-                  now().timeIntervalSince(startupPresence?.sentAt ?? .distantPast) > 5 {
-            startupPresence = (heartbeat.id, device, now())
+                  now().timeIntervalSince(presetPresence?.sentAt ?? .distantPast) > 5 {
+            presetPresence = (heartbeat.id, device, now())
         }
         send(heartbeat)
     }
@@ -267,7 +296,7 @@ public final class RigClient: ObservableObject {
     private func honorManualLight() {
         guard isConnected, !state.deviceID.isEmpty else { return }
         restoredCallDevices.insert(state.deviceID)
-        startupPresence = nil
+        presetPresence = nil
     }
 
     public func setLight(enabled: Bool, brightness: Int, mode: String = "neutral",
@@ -430,7 +459,7 @@ public final class RigClient: ObservableObject {
     @discardableResult
     public func configureNetwork(mode: String, ssid: String = "", password: String = "", apPassword: String = "") -> Bool {
         guard isConnected else {
-            networkSetupStatus = .failed("Подключи LightController к Mac встроенным USB-C.")
+            networkSetupStatus = .failed("Подключи Light Rig к Mac встроенным USB-C.")
             return false
         }
         guard networkRequest == nil else { return false }
@@ -484,10 +513,17 @@ public final class RigClient: ObservableObject {
 
     func accept(_ data: Data) {
         guard let envelope = try? JSONDecoder().decode(WireEnvelope.self, from: data),
-              envelope.v == 1, envelope.type == "rig.state" else { return }
+              envelope.v == 1 else { return }
+        if envelope.type == "ack", envelope.id == firmwareAck?.id {
+            lastReply = now()
+            if envelope.ok == true { completeFirmwareRequest(.success(())) }
+            else { completeFirmwareRequest(.failure(FirmwareUpdateError(envelope.error ?? "Контроллер отклонил обновление"))) }
+            return
+        }
+        guard envelope.type == "rig.state" else { return }
         state = RigState(envelope: envelope)
-        if let pending = startupPresence, pending.id == envelope.id {
-            startupPresence = nil
+        if let pending = presetPresence, pending.id == envelope.id {
+            presetPresence = nil
             if envelope.ok == true, pending.device == state.deviceID, state.lightReady {
                 restoredCallDevices.insert(pending.device)
                 applyLightPreset(3)
@@ -500,19 +536,19 @@ public final class RigClient: ObservableObject {
         if let request = presetSaveRequest, envelope.id == request.id {
             presetSaveRequest = nil
             if envelope.ok != true {
-                profileNotice = "Не удалось сохранить профиль на LightController"
+                profileNotice = "Не удалось сохранить профиль на Light Rig"
             } else if state.callLight == nil {
                 profileNotice = "Профиль отправлен. Эта прошивка не подтверждает сохранённый цвет."
             } else if state.callLight == RigState.CallLight(.object(request.payload)) {
-                profileNotice = "Профиль «Созвон» сохранён на LightController"
+                profileNotice = "Профиль «Созвон» сохранён на Light Rig"
             } else {
-                profileNotice = "LightController вернул другой профиль. Повтори сохранение."
+                profileNotice = "Light Rig вернул другой профиль. Повтори сохранение."
             }
         }
         if envelope.id == mqttSaveID {
             mqttSaveID = nil
             if envelope.ok == true {
-                mqttNotice = "Настройки сохранены на LightController"
+                mqttNotice = "Настройки сохранены на Light Rig"
                 readUSBSettings()
             } else { mqttNotice = envelope.error ?? "Не удалось сохранить настройки" }
         }
@@ -548,7 +584,7 @@ public final class RigClient: ObservableObject {
         lastReply = now()
         if let error = envelope.error { lastError = error }
         if envelope.rebooting == true {
-            notice = "Настройки сохранены. LightController перезапускается; RGB выключится."
+            notice = "Настройки сохранены. Light Rig перезапускается; RGB выключится."
             disconnect()
             lastAttempt = now()
         }

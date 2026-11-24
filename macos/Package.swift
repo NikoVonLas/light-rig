@@ -2,10 +2,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "CanonRig",
+    name: "LightRig",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "CanonRig", targets: ["CanonRig"]),
+        .executable(name: "LightRig", targets: ["CanonRig"]),
         .library(name: "CanonRigCore", targets: ["CanonRigCore"]),
     ],
     targets: [

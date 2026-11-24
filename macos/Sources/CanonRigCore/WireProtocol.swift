@@ -149,6 +149,10 @@ public struct RigState: Equatable, Sendable {
     public var lightEffect = "solid"
     public var lightProbe = LightProbe()
     public var firmware = "—"
+    public var firmwareTarget: String?
+    public var otaProtocol = 0
+    public var otaProgress: Int?
+    public var isLegacyLightController = false
     public var networkMode = "unknown"
 
     public init() {}
@@ -247,6 +251,15 @@ public struct RigState: Equatable, Sendable {
             if case .number(let value) = probe["symbols"] { lightProbe.symbols = Int(value) }
             if case .number(let value) = probe["minimumNs"] { lightProbe.minimumNs = Int(value) }
             if case .number(let value) = probe["maximumNs"] { lightProbe.maximumNs = Int(value) }
+        }
+        if case .number(let progress) = envelope.payload["otaProgress"], (0...100).contains(progress) {
+            otaProgress = Int(progress)
+        }
+        if case .string(let target) = envelope.payload["firmwareTarget"] { firmwareTarget = target }
+        if envelope.payload["otaProtocol"] == .number(1) { otaProtocol = 1 }
+        if case .object(let output) = envelope.payload["lightOutput"] {
+            isLegacyLightController = output["profile"] == .string("WS2812B") && output["gpio"] == .number(17)
+                && output["transport"] == .string("spi-dma") && deviceID.range(of: "^canonrig_[0-9a-f]{12}$", options: .regularExpression) != nil
         }
         if case .string(let value) = envelope.payload["firmware"] { firmware = value }
         if case .string(let value) = envelope.payload["networkMode"] { networkMode = value }

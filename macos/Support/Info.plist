@@ -3,16 +3,17 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>ru</string>
-    <key>CFBundleExecutable</key><string>CanonRig</string>
+    <key>CFBundleExecutable</key><string>LightRig</string>
     <key>CFBundleIdentifier</key><string>local.canonrig.controller</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleName</key><string>Canon Rig</string>
+    <key>CFBundleDisplayName</key><string>Light Rig</string>
+    <key>CFBundleName</key><string>Light Rig</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1.3</string>
+    <key>CFBundleShortVersionString</key><string>0.2.0</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
-    <key>NSCameraUsageDescription</key><string>Canon Rig показывает прямое превью с Cam Link.</string>
-    <key>NSMicrophoneUsageDescription</key><string>Canon Rig видит только состояние использования микрофона для диагностики; звук не записывается.</string>
+    <key>NSCameraUsageDescription</key><string>Light Rig показывает прямое превью с Cam Link.</string>
+    <key>NSMicrophoneUsageDescription</key><string>Light Rig видит только состояние использования микрофона для диагностики; звук не записывается.</string>
 </dict>
 </plist>

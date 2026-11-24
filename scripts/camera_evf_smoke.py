@@ -1,6 +1,6 @@
 """Explicit five-second EVF-off bench test; firmware restores original output.
 
-No sensor-power claim is made. Keep Canon Rig closed during this test.
+No sensor-power claim is made. Keep Light Rig closed during this test.
 """
 import argparse
 import json

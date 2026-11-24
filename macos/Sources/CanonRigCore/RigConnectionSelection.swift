@@ -25,7 +25,7 @@ struct RigConnectionSelection {
 
     func next(ports: [String], host: String, at now: Date) -> RigEndpoint? {
         if let usb = preferredUSB(ports: ports, at: now) { return usb }
-        let addresses = [host, "canonrig.local", "192.168.4.1"]
+        let addresses = [host, "lightrig.local", "canonrig.local", "192.168.4.1"]
         return addresses.filter { !$0.isEmpty }.map(RigEndpoint.network)
             .first { available($0, at: now) }
     }

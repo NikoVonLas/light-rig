@@ -2,7 +2,7 @@
 
 Does not assert physical sleep from host inactivity. No exposure/EVF settings
 are changed. Optional --timer uses only camera-advertised values and restores
-the original timer in finally. Keep Canon Rig closed while this owns serial.
+the original timer in finally. Keep Light Rig closed while this owns serial.
 """
 import argparse
 import json

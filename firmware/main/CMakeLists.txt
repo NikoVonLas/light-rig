@@ -5,6 +5,7 @@ idf_component_register(
         "rig_display.c"
         "rig_button.c"
         "rig_network.c"
+        "rig_ota.c"
         "presence_model.c"
         "rig_presence.c"
         "rig_homeassistant.c"

@@ -89,7 +89,7 @@ private struct MatterOnboarding: View {
     private let green = Color(red: 0.39, green: 0.80, blue: 0.31)
 
     private var title: String {
-        if finished { return "Дальше — в Canon Rig" }
+        if finished { return "Дальше — в Light Rig" }
         guard detail else { return "Через что управлять светом?" }
         switch selection {
         case .mac: return "Подключение к этому Mac"
@@ -196,7 +196,7 @@ private struct MatterOnboarding: View {
     private var standardPage: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Label("Canon Rig", systemImage: "video").font(.headline)
+                Label("Light Rig", systemImage: "video").font(.headline)
                 Spacer()
                 Text("Макет настройки").font(.caption).foregroundStyle(.secondary)
             }
@@ -207,7 +207,7 @@ private struct MatterOnboarding: View {
                 Text("После подключения мастер предложит интерактивный тур.")
                     .foregroundStyle(.secondary)
             } else if !detail {
-                Text("После настройки Wi-Fi выбери, кто будет управлять LightController.")
+                Text("После настройки Wi-Fi выбери, кто будет управлять Light Rig.")
                     .foregroundStyle(.secondary)
                 VStack(spacing: 8) {
                     ForEach(Route.allCases) { route in option(route) }
@@ -215,7 +215,7 @@ private struct MatterOnboarding: View {
             } else {
                 switch selection {
                 case .mac:
-                    info("cable.connector", "Данные сопряжения по USB", "Canon Rig получит их с подключённой платы автоматически.")
+                    info("cable.connector", "Данные сопряжения по USB", "Light Rig получит их с подключённой платы автоматически.")
                     info("wifi", "Управление по Wi-Fi", "После сопряжения кабель можно отсоединить.")
                 case .ha: EmptyView()
                 case .other:
@@ -302,7 +302,7 @@ private struct MatterOnboarding: View {
 @main
 private struct PreviewApp: App {
     var body: some Scene {
-        Window("Настройка LightController", id: "matter-preview") { MatterOnboarding() }
+        Window("Настройка Light Rig", id: "matter-preview") { MatterOnboarding() }
             .windowResizability(.contentSize)
     }
 }

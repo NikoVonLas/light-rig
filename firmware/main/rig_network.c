@@ -1,5 +1,6 @@
 #include "esp_attr.h"
 #include "rig_network.h"
+#include "rig_ota.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -170,6 +171,9 @@ static char *snapshot_json(const char *id, const char *type)
     cJSON_AddNumberToObject(probe_json, "minimumNs", probe.minimum_ns);
     cJSON_AddNumberToObject(probe_json, "maximumNs", probe.maximum_ns);
     cJSON_AddNumberToObject(payload, "revision", state.revision);
+    cJSON_AddStringToObject(payload, "firmwareTarget", "Light-Rig-esp32s2");
+    cJSON_AddNumberToObject(payload, "otaProtocol", 1);
+    cJSON_AddNumberToObject(payload, "otaProgress", rig_ota_progress());
     cJSON_AddStringToObject(payload, "firmware", esp_app_get_description()->version);
     cJSON_AddStringToObject(payload, "networkMode", s_network_mode);
     cJSON_AddStringToObject(payload, "networkSSID", s_station_ssid);
@@ -537,6 +541,26 @@ static char *handle_message(const char *message, bool usb)
     const char *error = NULL;
     if (!cJSON_IsObject(root) || !cJSON_IsString(type) || !cJSON_IsObject(payload) ||
         !cJSON_IsNumber(version) || version->valueint != 1) error = "invalid command";
+    else if (!strcmp(type->valuestring, "system.ota") && cJSON_IsString(id) && strlen(id->valuestring) <= 64) {
+        bool restart = false;
+        error = s_restarting ? "restart pending" : rig_ota_wire(payload, &restart);
+        cJSON *reply = cJSON_CreateObject();
+        cJSON_AddNumberToObject(reply, "v", 1);
+        cJSON_AddStringToObject(reply, "type", "ack");
+        cJSON_AddStringToObject(reply, "id", id->valuestring);
+        cJSON_AddObjectToObject(reply, "payload");
+        cJSON_AddBoolToObject(reply, "ok", error == NULL);
+        if (error) cJSON_AddStringToObject(reply, "error", error);
+        char *response = cJSON_PrintUnformatted(reply);
+        cJSON_Delete(reply);
+        cJSON_Delete(root);
+        if (restart) s_restarting = true;
+        xSemaphoreGive(s_command_lock);
+        if (restart && xTaskCreate(restart_task, "ota_restart", 2048, NULL, 3, NULL) != pdPASS) esp_restart();
+        return response;
+    }
+    else if (rig_ota_progress() >= 0 && (!strcmp(type->valuestring, "network.configure") ||
+             !strcmp(type->valuestring, "network.scan"))) error = "firmware update in progress";
     else if (!strcmp(type->valuestring, "settings.read")) error = usb ? NULL : "settings require USB";
     else if (!strcmp(type->valuestring, "network.scan")) error = start_scan(usb);
     else if (!strcmp(type->valuestring, "network.configure")) error = configure_network(payload, usb);
@@ -577,6 +601,10 @@ static void serial_task(void *argument)
     bool overflow = false;
     uint8_t bytes[128];
     while (true) {
+        if (rig_ota_progress() >= 0 && xSemaphoreTake(s_command_lock, 0) == pdTRUE) {
+            rig_ota_expire();
+            xSemaphoreGive(s_command_lock);
+        }
         if (s_last_serial_request_us && esp_timer_get_time() - s_last_serial_request_us >= PRESENCE_TTL_MS * 1000LL) {
             s_last_serial_request_us = 0;
             rig_state_note_activity();
@@ -639,23 +667,28 @@ static esp_err_t websocket_handler(httpd_req_t *request)
 
 static esp_err_t ota_handler(httpd_req_t *request)
 {
-    const esp_partition_t *partition = esp_ota_get_next_update_partition(NULL);
-    esp_ota_handle_t handle;
-    esp_err_t error = esp_ota_begin(partition, request->content_len, &handle);
+    if (xSemaphoreTake(s_command_lock, pdMS_TO_TICKS(500)) != pdTRUE)
+        return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "busy");
+    const char *error = rig_ota_begin(request->content_len, "http", "");
+    if (error) {
+        xSemaphoreGive(s_command_lock);
+        return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, error);
+    }
     char buffer[1024];
-    int remaining = request->content_len;
-    while (error == ESP_OK && remaining > 0) {
-        int count = httpd_req_recv(request, buffer, remaining < (int)sizeof(buffer) ? remaining : sizeof(buffer));
-        if (count <= 0) { error = ESP_FAIL; break; }
-        error = esp_ota_write(handle, buffer, count);
+    size_t remaining = request->content_len;
+    while (!error && remaining > 0) {
+        int count = httpd_req_recv(request, buffer, remaining < sizeof(buffer) ? remaining : sizeof(buffer));
+        if (count <= 0) { error = "upload interrupted"; break; }
+        error = rig_ota_write(buffer, count);
         remaining -= count;
     }
-    if (error == ESP_OK) error = esp_ota_end(handle);
-    else esp_ota_abort(handle);
-    if (error == ESP_OK) error = esp_ota_set_boot_partition(partition);
-    if (error != ESP_OK) return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA failed");
+    if (!error) error = rig_ota_finish();
+    if (error) rig_ota_abort();
+    else s_restarting = true;
+    xSemaphoreGive(s_command_lock);
+    if (error) return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, error);
     send_json(request, "{\"ok\":true,\"rebooting\":true}");
-    vTaskDelay(pdMS_TO_TICKS(300));
+    vTaskDelay(pdMS_TO_TICKS(500));
     esp_restart();
     return ESP_OK;
 }
@@ -714,7 +747,7 @@ static void wifi_stack_init(void)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_t *station = esp_netif_create_default_wifi_sta();
-    ESP_ERROR_CHECK(esp_netif_set_hostname(station, "LightController"));
+    ESP_ERROR_CHECK(esp_netif_set_hostname(station, "lightrig"));
     esp_netif_create_default_wifi_ap();
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&init));
@@ -764,7 +797,7 @@ static void start_access_point(void)
     uint8_t mac[6];
     ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP));
     char ssid[33], password[64] = {0};
-    snprintf(ssid, sizeof(ssid), "LightController-%02X%02X", mac[4], mac[5]);
+    snprintf(ssid, sizeof(ssid), "Light Rig-%02X%02X", mac[4], mac[5]);
     if (read_ap_password(password) != ESP_OK || strlen(password) < 8) {
         ESP_LOGE(TAG, "AP password unavailable; connect over USB");
         return;
@@ -825,9 +858,9 @@ bool rig_network_init(void)
     }
 
     ESP_ERROR_CHECK(mdns_init());
-    ESP_ERROR_CHECK(mdns_hostname_set("canonrig"));
-    ESP_ERROR_CHECK(mdns_instance_name_set("LightController"));
-    ESP_ERROR_CHECK(mdns_service_add("LightController", "_canonrig", "_tcp", 80, NULL, 0));
+    ESP_ERROR_CHECK(mdns_hostname_set("lightrig"));
+    ESP_ERROR_CHECK(mdns_instance_name_set("Light Rig"));
+    ESP_ERROR_CHECK(mdns_service_add("Light Rig", "_canonrig", "_tcp", 80, NULL, 0));
     bool server_ready = start_http_server();
     if (!strcmp(s_network_mode, "router"))
         configASSERT(xTaskCreate(wifi_recovery_task, "wifi_recovery", 3072, NULL, 2, NULL) == pdPASS);

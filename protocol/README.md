@@ -213,7 +213,7 @@ than Live View preparation: current write readiness requires further diagnosis.
 Earlier successful exposure/focus bench results should not be read as a claim
 that writes were successful in this latest camera state.
 
-The LightController display shows mode, camera connection, exposure, AF/Servo, RGB and
+The Light Rig display shows mode, camera connection, exposure, AF/Servo, RGB and
 last command status. Initialize the light driver before starting this display:
 the screen reads light state and requires its mutex to exist.
 
@@ -248,3 +248,22 @@ Bench verified and restored: ISO 400→320→400, f/1.4→f/1.6→f/1.4,
 AF start/cancel and near/far step 1 returned PTP OK; optical result needs preview.
 Current focusMode reports One Shot but an empty options list, so it is read-only.
 Current afMethod options are 2 (face), 10 (spot), 1 (single point), 4 (zone).
+
+### Bundled Light Rig firmware
+
+The macOS release includes the same ESP32-S2 application image published alongside
+its DMG. Its ESP image descriptor supplies the firmware version independently of
+the app version. The Mac checks the target and transfers only a newer image while
+video is idle. It waits for the same device to reconnect and report the target version.
+
+Firmware 0.2.0 advertises `firmwareTarget`, `otaProtocol: 1` and `otaProgress`.
+USB serial and WebSocket use `system.ota` requests with `begin`, `write`, `finish`
+and `abort`, each with a session UUID and a correlated `ack`. Writes carry an
+exact byte offset and up to 1536 bytes of Base64-decoded data. One session owns the
+inactive OTA partition. Incomplete transfers expire after 20 seconds. Validation
+precedes boot selection. The LCD stays awake and displays progress and restart.
+
+Legacy 0.1.0 requires a reachable router or AP for its first upload to `/api/ota`.
+The Mac checks the board identity at `/health` first and shows progress. This older
+firmware can first show the new update screen after reboot. Later transfers also
+work with only USB. Installation preserves NVS settings and the saved call profile.

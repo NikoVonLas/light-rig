@@ -1,6 +1,6 @@
 # Firmware
 
-ESP-IDF firmware for LightController based on the TTGO T8 ESP32-S2 V1.1.
+ESP-IDF firmware for Light Rig based on the TTGO T8 ESP32-S2 V1.1.
 
 ## Build
 
@@ -34,8 +34,8 @@ and retries indefinitely with a 2–30-second backoff. Scan and reconnect operat
 are serialized. USB-only scans temporarily start Wi-Fi and stop it afterward.
 No password is returned in state or written to source control.
 
-AP mode is still available explicitly in Settings. It advertises `LightController-XXXX`
-and serves provisioning at `192.168.4.1`; router mode advertises `canonrig.local`.
+AP mode is still available explicitly in Settings. It advertises `Light Rig-XXXX`
+and serves provisioning at `192.168.4.1`; router mode advertises `lightrig.local`.
 
 ## Status display
 
@@ -64,7 +64,7 @@ Effects transmit each time the rendered RGB values change.
 The internal pull-down is checked using GPIO configuration readback.
 The legacy GPIO18 capture input is released before RGB output starts.
 
-A short LightController BOOT press cycles RGB colors/effects. Hold it for at least
+A short Light Rig BOOT press cycles RGB colors/effects. Hold it for at least
 1.2 seconds and release to switch RGB off.
 
 For example:

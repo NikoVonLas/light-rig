@@ -196,11 +196,19 @@ static void light_task(void *argument)
 {
     (void)argument;
     uint32_t tick = 0;
+    unsigned refreshes = 0;
+    TickType_t last_refresh = 0;
     while (true) {
         xSemaphoreTake(s_lock, portMAX_DELAY);
         s_frame = render_frame(&s_command, tick++);
         light_frame_t frame = s_frame;
-        bool transmit = s_rgb_ready && (s_refresh_pending || frame.red != s_last_tx.red ||
+        // DIN has no acknowledgement. Refresh the current frame after a transition
+        // even when the driver completed the transfer but the strip missed it.
+        TickType_t now = xTaskGetTickCount();
+        if (s_refresh_pending) refreshes = 3;
+        bool refresh = refreshes && (s_refresh_pending || now - last_refresh >= pdMS_TO_TICKS(180));
+        if (refresh) { refreshes--; last_refresh = now; }
+        bool transmit = s_rgb_ready && (refresh || frame.red != s_last_tx.red ||
                         frame.green != s_last_tx.green || frame.blue != s_last_tx.blue);
         s_refresh_pending = false;
         xSemaphoreGive(s_lock);

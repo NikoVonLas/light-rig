@@ -13,6 +13,7 @@ enum RigWindowTab: String, CaseIterable {
 @MainActor
 final class AppModel: ObservableObject {
     let client = RigClient()
+    lazy var firmware = ControllerFirmware(client: client)
     let onboarding = OnboardingFlow()
     private var onboardingWindow: OnboardingWindowController?
     private var mainWindow: MainWindowController?
@@ -37,7 +38,7 @@ final class AppModel: ObservableObject {
     #if CANON_RIG_UPDATES
     lazy var updates = AppUpdates { [weak self] in
         guard let self else { return true }
-        return self.updatesPaused || self.detector.videoIsActive
+        return self.updatesPaused || self.detector.videoIsActive || self.firmware.progress != nil
     }
     var updatesPaused: Bool { videoIsActive || onCall }
     #endif
@@ -106,6 +107,7 @@ final class AppModel: ObservableObject {
         presenceCall.update(rawActive: videoIsActive)
         if onCall != presenceCall.isOnCall { lightUpdates.cancel() }
         onCall = presenceCall.isOnCall
+        firmware.observe(videoActive: videoIsActive || onCall || previewEnabled)
         #if CANON_RIG_UPDATES
         updates.resumeWhenIdle()
         #endif

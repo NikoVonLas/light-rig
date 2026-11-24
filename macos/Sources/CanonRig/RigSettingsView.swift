@@ -120,8 +120,9 @@ struct RigSettingsView: View {
 
     private var networkSettings: some View {
         Group {
-            Section("LightController") {
+            Section("Light Rig") {
                 LabeledContent("Подключение", value: model.client.connectionLabel)
+                FirmwareUpdateStatus(firmware: model.firmware)
                 if model.client.state.wifiConnected {
                     LabeledContent("IP-адрес", value: model.client.state.ipAddress)
                 }
@@ -132,7 +133,7 @@ struct RigSettingsView: View {
                 })) {
                     if selectedNetworkMode == "unknown" { Text("Нет данных").tag("unknown") }
                     Text("Домашняя сеть").tag("router")
-                    Text("Точка доступа LightController").tag("ap")
+                    Text("Точка доступа Light Rig").tag("ap")
                     Text("Без Wi-Fi").tag("usb")
                 }
                 .pickerStyle(.menu)
@@ -247,7 +248,7 @@ struct RigSettingsView: View {
                       model.client.state.haEnabled ? "Ожидание подключения MQTT" : "Ещё не подключён",
                       systemImage: model.client.state.haConnected ? "checkmark.circle.fill" : "house")
                 if !model.client.state.wifiConnected {
-                    Text("Подключи LightController к Wi-Fi в разделе «Сеть».").font(.caption).foregroundStyle(.secondary)
+                    Text("Подключи Light Rig к Wi-Fi в разделе «Сеть».").font(.caption).foregroundStyle(.secondary)
                 }
                 if model.client.state.haEnabled {
                     Button("Отключить Home Assistant") {
@@ -289,8 +290,8 @@ struct RigSettingsView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(board.isEmpty || model.client.usbSettings == nil || mqttHost.isEmpty)
-                if board.isEmpty { Text("Для сохранения подключи LightController по USB.") }
-                else if !model.client.state.hasPersistentSettings { Text("Для сохранения нужна новая прошивка LightController.") }
+                if board.isEmpty { Text("Для сохранения подключи Light Rig по USB.") }
+                else if !model.client.state.hasPersistentSettings { Text("Для сохранения нужна новая прошивка Light Rig.") }
                 if let notice = model.client.mqttNotice { Text(notice).font(.caption) }
             }
             if !model.client.state.presenceClients.isEmpty {
@@ -307,7 +308,7 @@ struct RigSettingsView: View {
             }
         }
         .onChange(of: model.client.mqttNotice) { _, notice in
-            if notice == "Настройки сохранены на LightController" { mqttPassword = "" }
+            if notice == "Настройки сохранены на Light Rig" { mqttPassword = "" }
         }
     }
 
@@ -316,5 +317,26 @@ struct RigSettingsView: View {
         mqttHost = state.haHost
         mqttPort = state.haHost.isEmpty ? "8883" : String(state.haPort)
         mqttTLS = state.haHost.isEmpty || state.haTLS
+    }
+}
+
+struct FirmwareUpdateStatus: View {
+    @ObservedObject var firmware: ControllerFirmware
+
+    var body: some View {
+        if !firmware.status.isEmpty {
+            LabeledContent("Версия платы") {
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(firmware.status)
+                    if let progress = firmware.progress {
+                        ProgressView(value: Double(progress), total: 100)
+                            .accessibilityValue("\(progress)%")
+                    }
+                    if firmware.canRetry {
+                        Button("Повторить обновление") { firmware.retry() }
+                    }
+                }
+            }
+        }
     }
 }

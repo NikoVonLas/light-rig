@@ -48,5 +48,5 @@ void app_main(void)
         ESP_LOGI(TAG, "new OTA image reached healthy application state; accepting it");
         ESP_ERROR_CHECK(esp_ota_mark_app_valid_cancel_rollback());
     }
-    ESP_LOGI(TAG, "Canon Rig firmware %s started", esp_app_get_description()->version);
+    ESP_LOGI(TAG, "Light Rig firmware %s started", esp_app_get_description()->version);
 }

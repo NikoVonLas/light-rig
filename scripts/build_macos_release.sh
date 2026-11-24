@@ -41,10 +41,10 @@ swift test --package-path "$root/macos" --build-system native --disable-sandbox 
     -Xswiftc -DCANON_RIG_UPDATES -Xswiftc -F -Xswiftc "$tools" \
     -Xlinker -F -Xlinker "$tools" -Xlinker -rpath -Xlinker "$tools"
 version=${tag#v}
-app="$work/image/Canon Rig.app"
+app="$work/image/Light Rig.app"
 mkdir -p "$app/Contents/"{Frameworks,MacOS,Resources} "$work/feed"
 for arch in arm64 x86_64; do
-    args=(--package-path "$root/macos" --configuration release --product CanonRig
+    args=(--package-path "$root/macos" --configuration release --product LightRig
           --build-system native --arch "$arch" --scratch-path "$cache/$arch"
           --disable-sandbox --cache-path "$cache/swift" --config-path "$cache/config" --security-path "$cache/security"
           -Xswiftc -module-cache-path -Xswiftc "$cache/modules"
@@ -52,12 +52,25 @@ for arch in arm64 x86_64; do
           -Xlinker -F -Xlinker "$tools" -Xlinker -rpath -Xlinker '@executable_path/../Frameworks')
     swift build "${args[@]}"
     bin=$(swift build "${args[@]}" --show-bin-path)
-    cp "$bin/CanonRig" "$work/CanonRig-$arch"
+    cp "$bin/LightRig" "$work/LightRig-$arch"
 done
-exe="$app/Contents/MacOS/CanonRig"
-lipo -create "$work/CanonRig-arm64" "$work/CanonRig-x86_64" -output "$exe"
+exe="$app/Contents/MacOS/LightRig"
+lipo -create "$work/LightRig-arm64" "$work/LightRig-x86_64" -output "$exe"
 ditto "$tools/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
 cp "$root/macos/THIRD_PARTY_NOTICES.md" "$tools/LICENSE" "$app/Contents/Resources/"
+firmware="$output/Light-Rig-esp32s2.bin"
+if [[ ! -f "$firmware" ]]; then
+    firmware="$root/firmware/build/light_rig.bin"
+fi
+python3 - "$firmware" <<'PYTHON'
+import pathlib, sys
+data = pathlib.Path(sys.argv[1]).read_bytes()
+if (not 288 < len(data) <= 0x190000 or data[0] != 0xe9 or data[12:14] != b"\x02\x00"
+        or data[32:36] != bytes.fromhex("3254cdab")
+        or data[80:112].split(b"\0")[0] != b"light_rig"):
+    raise SystemExit("Unexpected Light Rig firmware image")
+PYTHON
+cp "$firmware" "$app/Contents/Resources/Light-Rig-esp32s2.bin"
 plist="$app/Contents/Info.plist"
 cp "$root/macos/Support/Info.plist" "$plist"
 plutil -replace CFBundleVersion -string "$version" "$plist"
@@ -72,8 +85,8 @@ plutil -insert SUScheduledCheckInterval -integer 3600 "$plist"
 codesign --force --sign - "$app"
 codesign --verify --deep --strict --all-architectures "$app"
 ln -s /Applications "$work/image/Applications"
-name="Canon-Rig-$version.dmg"
-hdiutil create -fs HFS+ -volname "Canon Rig" -srcfolder "$work/image" -format UDZO "$work/feed/$name"
+name="Light-Rig-$version.dmg"
+hdiutil create -fs HFS+ -volname "Light Rig" -srcfolder "$work/image" -format UDZO "$work/feed/$name"
 hdiutil verify "$work/feed/$name"
 printf '%s' "$key" | "$tools/bin/generate_appcast" --ed-key-file - --maximum-deltas 0 \
     --download-url-prefix "https://github.com/$repo/releases/download/$tag/" "$work/feed"
