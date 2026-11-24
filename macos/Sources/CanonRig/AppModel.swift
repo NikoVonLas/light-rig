@@ -34,6 +34,14 @@ final class AppModel: ObservableObject {
         syncPreviewWithWindow()
     }
 
+    #if CANON_RIG_UPDATES
+    lazy var updates = AppUpdates { [weak self] in
+        guard let self else { return true }
+        return self.updatesPaused || self.detector.videoIsActive
+    }
+    var updatesPaused: Bool { videoIsActive || onCall }
+    #endif
+
     private var videoIsActive = false
     @Published var onCall = false
     @Published var automatic = UserDefaults.standard.object(forKey: "automaticCallLight") as? Bool ?? true {
@@ -99,6 +107,9 @@ final class AppModel: ObservableObject {
         presenceCall.update(rawActive: videoIsActive)
         if onCall != presenceCall.isOnCall { lightUpdates.cancel() }
         onCall = presenceCall.isOnCall
+        #if CANON_RIG_UPDATES
+        updates.resumeWhenIdle()
+        #endif
         if client.isConnected, let saved = client.state.callLight {
             if saved != loadedLight || client.state.deviceID != loadedLightDevice {
                 restoreLightEditor(saved)
@@ -166,6 +177,11 @@ final class AppModel: ObservableObject {
         client.cancelNetworkSetup()
         routerPassword = ""
         onboarding.continueUSB()
+    }
+
+    func quit() {
+        stopPreview()
+        NSApp.terminate(nil)
     }
 
     func openMainWindow() {

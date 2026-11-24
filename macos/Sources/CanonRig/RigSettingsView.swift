@@ -6,10 +6,17 @@ struct RigSettingsView: View {
     private enum SettingsTab: String, CaseIterable {
         case network = "Сеть", homeAssistant = "Home Assistant"
 
+        #if CANON_RIG_UPDATES
+        case updates = "Обновления"
+        #endif
+
         var icon: String {
             switch self {
             case .network: "wifi"
             case .homeAssistant: "house"
+            #if CANON_RIG_UPDATES
+            case .updates: "arrow.triangle.2.circlepath"
+            #endif
             }
         }
     }
@@ -53,8 +60,11 @@ struct RigSettingsView: View {
                     switch section {
                     case .network: networkSettings
                     case .homeAssistant: homeAssistantSettings
+                    #if CANON_RIG_UPDATES
+                    case .updates: AppUpdateSettings(updates: model.updates, paused: model.updatesPaused)
+                    #endif
                     }
-                    if section != .network, let error = model.client.lastError {
+                    if section == .homeAssistant, let error = model.client.lastError {
                         Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                     }
                 }

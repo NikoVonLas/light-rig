@@ -35,6 +35,11 @@ let input = FileHandle.standardInput.readDataToEndOfFile()
 guard let seed = Data(base64Encoded: input, options: .ignoreUnknownCharacters), seed.count == 32 else { exit(1) }
 print(try Curve25519.Signing.PrivateKey(rawRepresentation: seed).publicKey.rawRepresentation.base64EncodedString())
 ')
+# Exercise the actual Sparkle delegates in the same configuration as the DMG.
+swift test --package-path "$root/macos" --build-system native --disable-sandbox \
+    --scratch-path "$cache/update-tests" --filter AppUpdateTests \
+    -Xswiftc -DCANON_RIG_UPDATES -Xswiftc -F -Xswiftc "$tools" \
+    -Xlinker -F -Xlinker "$tools" -Xlinker -rpath -Xlinker "$tools"
 version=${tag#v}
 app="$work/image/Canon Rig.app"
 mkdir -p "$app/Contents/"{Frameworks,MacOS,Resources} "$work/feed"

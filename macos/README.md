@@ -115,8 +115,9 @@ The release repository's latest stable release and assets must be publicly
 readable. Install the first update-enabled DMG into Applications on each Mac.
 It checks the latest release feed roughly hourly while running. Sparkle verifies
 the feed and downloaded DMG against the public key embedded in the app and
-can install a downloaded update on quit. The menu bar offers **Обновления…**
-for an immediate check. Builds made by `build_macos_app.sh` remain local builds.
+can install a downloaded update on quit. Open **Настройки → Обновления** to
+change automatic checks and installation or check manually. Active video
+(including preview) pauses checks and defers installation and relaunch. Builds made by `build_macos_app.sh` remain local builds.
 
 Configure the repository Actions secret `SPARKLE_PRIVATE_KEY` once, using the
 base64-encoded 32-byte Ed25519 seed exported by Sparkle's `generate_keys`.

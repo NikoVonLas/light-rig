@@ -11,6 +11,7 @@ let package = Package(
     targets: [
         .target(name: "CanonRigCore"),
         .executableTarget(name: "CanonRig", dependencies: ["CanonRigCore"]),
+        .testTarget(name: "AppUpdateTests", dependencies: ["CanonRig"]),
         .testTarget(name: "CanonRigCoreTests", dependencies: ["CanonRigCore"]),
     ]
 )

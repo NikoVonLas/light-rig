@@ -67,12 +67,9 @@ struct MenuBarContent: View {
                     dismiss()
                     model.openMainWindow()
                     NSApp.activate(ignoringOtherApps: true)
-                } label: { Label("Панель управления…", systemImage: "slider.horizontal.3") }
+                } label: { Label("Панель управления", systemImage: "slider.horizontal.3") }
                 Spacer()
-                #if CANON_RIG_UPDATES
-                Button("Обновления…") { dismiss(); CanonRigApplicationDelegate.updates.checkForUpdates(nil) }
-                #endif
-                Button("Выйти") { NSApp.terminate(nil) }
+                Button("Выйти") { model.quit() }
             }
             .buttonStyle(.borderless)
             .padding(.horizontal, 20).padding(.bottom, 14)
