@@ -4,8 +4,11 @@ import SwiftUI
 
 /// One window owner for both the menu bar and the setup wizard, including cold launch.
 @MainActor
-final class MainWindowController: NSWindowController, NSWindowDelegate {
+final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate {
     private weak var model: AppModel?
+    private let tabs = NSSegmentedControl()
+    private let navigationID = NSToolbarItem.Identifier("rig.navigation")
+
     init(model: AppModel) {
         self.model = model
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 620),
@@ -19,8 +22,62 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.center()
         super.init(window: window)
         window.delegate = self
+        tabs.segmentCount = RigWindowTab.allCases.count
+        tabs.trackingMode = .selectOne
+        tabs.segmentStyle = .rounded
+        tabs.controlSize = .small
+        let tabFont = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium)
+        tabs.font = tabFont
+        tabs.target = self
+        tabs.action = #selector(chooseTab(_:))
+        tabs.setAccessibilityLabel("Раздел окна")
+        for (index, tab) in RigWindowTab.allCases.enumerated() {
+            tabs.setLabel(tab.rawValue, forSegment: index)
+            let image = NSImage(systemSymbolName: tab.icon, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
+            tabs.setImage(image, forSegment: index)
+            tabs.setImageScaling(.scaleProportionallyDown, forSegment: index)
+            tabs.setToolTip(tab.rawValue, forSegment: index)
+            let titleWidth = (tab.rawValue as NSString).size(withAttributes: [.font: tabFont]).width
+            tabs.setWidth(ceil(titleWidth) + 42, forSegment: index)
+        }
+        tabs.sizeToFit()
+        let toolbar = NSToolbar(identifier: "CanonRigMainNavigation")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        window.toolbarStyle = .unifiedCompact
+        window.toolbar = toolbar
+        selectTab(model.windowTab)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    func selectTab(_ tab: RigWindowTab) {
+        if let index = RigWindowTab.allCases.firstIndex(of: tab) { tabs.selectedSegment = index }
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [navigationID]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [navigationID]
+    }
+
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier,
+                 willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        guard id == navigationID else { return nil }
+        let item = NSToolbarItem(itemIdentifier: id)
+        item.label = "Раздел окна"
+        item.isBordered = false
+        item.view = tabs
+        return item
+    }
+
+    @objc private func chooseTab(_ sender: NSSegmentedControl) {
+        let index = sender.selectedSegment
+        guard RigWindowTab.allCases.indices.contains(index) else { return }
+        model?.selectTab(RigWindowTab.allCases[index])
+    }
+
     func present() {
         showWindow(nil)
         window?.deminiaturize(nil)
@@ -55,7 +112,7 @@ extension View {
 struct InteractiveTour: View {
     @ObservedObject var flow: OnboardingFlow
     let anchors: [OnboardingFlow.TourStep: Anchor<CGRect>]
-    private let accent = Color(red: 0.39, green: 0.80, blue: 0.31)
+    private let accent = Color.accentColor
 
     var body: some View {
         GeometryReader { geometry in
@@ -94,7 +151,7 @@ struct InteractiveTour: View {
                     .foregroundStyle(.secondary).monospacedDigit()
             }.font(.caption.weight(.semibold))
             VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(.system(size: 20, weight: .semibold, design: .rounded))
+                Text(title).font(.system(size: 20, weight: .semibold))
                 Text(detail).font(.system(size: 13)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -110,14 +167,14 @@ struct InteractiveTour: View {
                 }
                 Spacer()
                 Button(flow.tourStep == .settings ? "Готово" : "Далее") { flow.next() }
-                    .buttonStyle(.borderedProminent).tint(accent).foregroundStyle(.black)
+                    .buttonStyle(.borderedProminent)
             }.controlSize(.large)
             Button("Завершить тур") { flow.complete() }
                 .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
         }
         .padding(20)
         .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(accent.opacity(0.4)))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.quaternary))
         .shadow(color: .black.opacity(0.3), radius: 20, y: 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Интерактивный тур")
@@ -129,7 +186,6 @@ struct InteractiveTour: View {
         case .exposure: "Настрой картинку"
         case .focus: "Наведи резкость"
         case .light: "Подбери свет"
-        case .automation: "Свет включится на звонке"
         case .settings: "Всё под рукой"
         }
     }
@@ -137,17 +193,15 @@ struct InteractiveTour: View {
     private var detail: String {
         switch flow.tourStep {
         case .preview:
-            "Здесь видео с Cam Link через HDMI. Когда окно открыто, превью включается автоматически. Закрой или сверни окно, чтобы освободить камеру."
+            "Здесь видео с Cam Link через HDMI. Превью включается на вкладке «Камера». Переход в настройки, закрытие или сворачивание окна освобождает Cam Link."
         case .exposure:
             "Выдержка, диафрагма и ISO находятся под превью. Нажми на значение, чтобы выбрать другое. Для управления подключи USB камеры к LightController — изменения применяются сразу."
         case .focus:
-            "Мы открыли панель «Фокус». Здесь режим AF, область фокусировки и ручные шаги «Ближе» и «Дальше». Доступные команды зависят от режима камеры. Попробовать можно прямо сейчас."
+            "Нажми на объект прямо в превью, чтобы камера навела на него резкость. Рамка покажет выбранную точку. В панели «Фокус» можно выбрать режим и область автофокуса или подстроить резкость кнопками «Ближе» и «Дальше»."
         case .light:
-            "В панели «Свет» выбери цвет, яркость и эффект. Управление применяется сразу. Здесь же можно сохранить профиль для созвонов. Кнопка «Свет» открывает и закрывает эту панель."
-        case .automation:
-            "Переключатель «Автоматически» разрешает включать сохранённый свет при захвате камеры, включая превью Canon Rig. Когда захват заканчивается, свет гаснет. Во время тура автоматика приостановлена."
+            "Выбери цвет и яркость, затем нажми «Сохранить для созвонов». В меню Canon Rig в строке меню включи «Свет на созвоне», чтобы этот профиль включался при захвате видео. Во время тура автосвет приостановлен."
         case .settings:
-            "Шестерёнка открывает подключение и настройки. USB и Wi-Fi выбираются автоматически. Здесь можно настроить сеть позже или снова запустить знакомство с приложением."
+            "На вкладке «Настройки» можно настроить сеть и Home Assistant. USB и Wi-Fi выбираются автоматически. Здесь же можно снова пройти тур."
         }
     }
 }

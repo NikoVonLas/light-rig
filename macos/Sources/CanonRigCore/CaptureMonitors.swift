@@ -143,6 +143,8 @@ public final class CallDetector {
 
     public init() {}
 
+    public var videoIsActive: Bool { !camera.camerasInUse().isEmpty }
+
     public func sample() -> CaptureSnapshot {
         let running = NSWorkspace.shared.runningApplications
         let meetingApps = running.filter { app in

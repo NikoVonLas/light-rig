@@ -47,7 +47,10 @@ typedef struct {
     light_frame_t last_tx;
 } light_output_status_t;
 
+#define LIGHT_CALL_PRESET 3
+
 void rig_light_init(void);
+light_command_t rig_light_get_call_preset(void);
 bool rig_light_apply(const light_command_t *command);
 bool rig_light_apply_preset(uint8_t slot);
 bool rig_light_save_preset(uint8_t slot, const char *name, const light_command_t *command);

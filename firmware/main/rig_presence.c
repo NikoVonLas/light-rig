@@ -89,7 +89,7 @@ static void presence_task(void *arg) {
         if (model.clients[0].id[0] || model.clients[1].id[0]) {
             rig_mode_t mode = r.call == 1 ? RIG_ON_CALL : r.preview ? RIG_PREVIEW : RIG_IDLE;
             if (rig_state_get().mode != mode) rig_state_set_mode(mode);
-            if (r.automate && !controlled) { rig_light_apply_preset(3); controlled = true; }
+            if (r.automate && !controlled) { controlled = rig_light_apply_preset(LIGHT_CALL_PRESET); }
             else if (!r.automate && controlled) {
                 light_command_t light = rig_light_get_command(); light.enabled = false; rig_light_apply(&light); controlled = false;
             }

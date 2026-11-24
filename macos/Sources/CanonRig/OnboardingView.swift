@@ -40,7 +40,7 @@ struct OnboardingView: View {
     var onHeightChange: (CGFloat) -> Void
     @State private var manualNetwork = false
     @State private var networkPickerOpen = false
-    private let accent = Color(red: 0.39, green: 0.80, blue: 0.31)
+    private let accent = Color.accentColor
     private var sameBoard: Bool { model.client.isConnected && model.client.state.deviceID == flow.deviceID }
     private var usbReady: Bool { sameBoard && model.client.activeConnectionMode == .usb }
     private var validCredentials: Bool {
@@ -54,8 +54,8 @@ struct OnboardingView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             HStack(spacing: 8) {
-                Image(systemName: "video").foregroundStyle(accent)
-                Text("Canon Rig").font(.headline)
+                Image(systemName: "video").font(.system(size: 23, weight: .medium)).foregroundStyle(.secondary)
+                Text("Canon Rig").font(.system(size: 15, weight: .semibold))
                 Spacer()
                 Text(flow.step == .invitation ? "2 из 2" : "1 из 2")
                     .font(.subheadline).foregroundStyle(.secondary)
@@ -89,7 +89,7 @@ struct OnboardingView: View {
 
     private func title(_ text: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(text).font(.system(size: 24, weight: .semibold, design: .rounded))
+            Text(text).font(.system(size: 22, weight: .semibold))
             Text(detail).font(.system(size: 14)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -108,13 +108,13 @@ struct OnboardingView: View {
             Text("С Wi-Fi плату можно питать от блока. USB остаётся доступен в любой момент.")
                 .foregroundStyle(.secondary)
             if !usbReady { disconnected }
-            VStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Button { model.beginOnboardingWiFi() } label: {
                     Label("Настроить Wi-Fi", systemImage: "wifi")
-                }.buttonStyle(OnboardingButtonStyle(primary: true)).disabled(!usbReady)
+                }.buttonStyle(.borderedProminent).controlSize(.large).disabled(!usbReady)
                 Button { model.continueOnboardingUSB() } label: {
                     Label("Продолжить по USB", systemImage: "cable.connector")
-                }.buttonStyle(OnboardingButtonStyle()).disabled(!usbReady)
+                }.buttonStyle(.bordered).controlSize(.large).disabled(!usbReady)
             }
         }
     }
@@ -193,9 +193,9 @@ struct OnboardingView: View {
             if !usbReady { disconnected }
             HStack(spacing: 12) {
                 Button("Назад") { model.routerPassword = ""; flow.backToConnection() }
-                    .buttonStyle(OnboardingButtonStyle()).frame(width: 100)
+                    .buttonStyle(.bordered).controlSize(.large).frame(width: 100)
                 Button("Подключить к Wi-Fi") { model.connectOnboardingWiFi() }
-                    .buttonStyle(OnboardingButtonStyle(primary: true)).disabled(!usbReady || !validCredentials)
+                    .buttonStyle(.borderedProminent).controlSize(.large).disabled(!usbReady || !validCredentials)
             }
         }
     }
@@ -212,10 +212,10 @@ struct OnboardingView: View {
             Text("Не отключай USB. Пароль повторно не отправляется.").font(.callout).foregroundStyle(.secondary)
             if networkFailed {
                 Button("Изменить сеть или пароль") { model.beginOnboardingWiFi() }
-                    .buttonStyle(OnboardingButtonStyle(primary: true)).disabled(!usbReady)
+                    .buttonStyle(.borderedProminent).controlSize(.large).disabled(!usbReady)
             }
             Button("Продолжить по USB") { model.continueOnboardingUSB() }
-                .buttonStyle(OnboardingButtonStyle()).disabled(!usbReady)
+                .buttonStyle(.bordered).controlSize(.large).disabled(!usbReady)
         }
     }
 
@@ -228,11 +228,11 @@ struct OnboardingView: View {
                 .font(.callout)
             Text("Можно попробовать управление, вернуться назад или закончить в любой момент. Тур доступен и позже в настройках.")
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            VStack(spacing: 10) {
-                Button("Пройти интерактивный тур") { model.enterApplication(withTour: true) }
-                    .buttonStyle(OnboardingButtonStyle(primary: true))
-                Button("Пропустить и открыть приложение") { model.enterApplication(withTour: false) }
-                    .buttonStyle(OnboardingButtonStyle())
+            HStack(spacing: 12) {
+                Button("Пройти тур") { model.enterApplication(withTour: true) }
+                    .buttonStyle(.borderedProminent).controlSize(.large)
+                Button("Пропустить") { model.enterApplication(withTour: false) }
+                    .buttonStyle(.bordered).controlSize(.large)
             }
         }
     }
@@ -246,21 +246,6 @@ struct OnboardingView: View {
 private struct OnboardingHeight: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-
-private struct OnboardingButtonStyle: ButtonStyle {
-    var primary = false
-    @Environment(\.isEnabled) private var isEnabled
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .frame(maxWidth: .infinity, minHeight: 42)
-            .foregroundStyle(primary && isEnabled ? Color.black : Color.primary.opacity(isEnabled ? 1 : 0.35))
-            .background(primary && isEnabled ? Color(red: 0.39, green: 0.80, blue: 0.31) : Color(nsColor: .controlBackgroundColor),
-                        in: RoundedRectangle(cornerRadius: 9))
-            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.primary.opacity(primary && isEnabled ? 0 : 0.12)))
-            .opacity(configuration.isPressed ? 0.75 : 1)
-    }
 }
 
 extension View {

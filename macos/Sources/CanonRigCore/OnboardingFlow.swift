@@ -4,7 +4,7 @@ import Foundation
 public final class OnboardingFlow: ObservableObject {
     public enum Step: Hashable { case connection, wifi, waiting, invitation, tour }
     public enum TourStep: Int, CaseIterable, Hashable, Sendable {
-        case preview, exposure, focus, light, automation, settings
+        case preview, exposure, focus, light, settings
     }
     @Published public private(set) var step: Step?
     @Published public private(set) var tourStep: TourStep = .preview

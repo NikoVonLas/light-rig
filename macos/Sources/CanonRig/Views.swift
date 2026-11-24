@@ -2,184 +2,114 @@ import AppKit
 import CanonRigCore
 import SwiftUI
 
-struct StatusDot: View {
-    let active: Bool
-    var color: Color = .green
+struct RigHeaderIcon: View {
+    let onCall: Bool
+
     var body: some View {
-        Circle().fill(active ? color : Color.secondary.opacity(0.25)).frame(width: 9, height: 9)
+        Image(systemName: onCall ? "video.fill" : "video")
+            .font(.system(size: 23, weight: .medium))
+            .foregroundStyle(onCall ? Color.red : .secondary)
+            .accessibilityHidden(true)
     }
 }
 
 struct MenuBarContent: View {
     @ObservedObject var model: AppModel
-    private let signalGreen = Color(red: 0.39, green: 0.80, blue: 0.31)
-    private let portBlue = Color(red: 0.32, green: 0.66, blue: 0.98)
+    let dismiss: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            content
-            Divider()
-            footer
-        }
-        .frame(width: 340)
-        .background(.ultraThinMaterial)
-        .tint(signalGreen)
-    }
-
-    private var header: some View {
-        HStack(spacing: 11) {
-            Image(systemName: "video")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(signalGreen)
-                .frame(width: 36, height: 30)
-                .background(signalGreen.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Canon Rig")
-                    .font(.system(.headline, design: .rounded, weight: .semibold))
-                HStack(spacing: 5) {
-                    Circle().fill(model.client.isConnected ? signalGreen : .orange).frame(width: 6, height: 6)
-                    Text(model.client.isConnected ? "LightController подключён" : "Поиск LightController")
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                RigHeaderIcon(onCall: model.onCall)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Canon Rig").font(.system(size: 15, weight: .semibold))
+                    Text(model.client.isConnected ? "LightController · " + model.client.connectionLabel : "Поиск LightController…")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 16).padding(.vertical, 13)
-    }
-
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 8) {
-                Image(systemName: model.onCall ? "video.fill" : "checkmark.circle")
-                    .foregroundStyle(model.onCall ? .red : signalGreen)
-                Text(model.onCall ? "На созвоне" : "Свободен")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
                 Spacer()
-                Text(model.client.isConnected ? model.client.connectionLabel : "Нет связи")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(portBlue)
-                    .padding(.horizontal, 7).padding(.vertical, 4)
-                    .background(portBlue.opacity(0.12), in: Capsule())
+                Button { model.reconnect() } label: {
+                    Image(systemName: "arrow.clockwise").frame(width: 24, height: 24)
+                }
+                .buttonStyle(.borderless)
+                .help("Переподключить LightController").accessibilityLabel("Переподключить LightController")
             }
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal, 18).padding(.top, 15)
 
             VStack(alignment: .leading, spacing: 8) {
-                sectionLabel("Подключения")
-                connectionRow("Камера", icon: "camera", detail: model.client.isConnected && model.client.state.cameraConnected
-                    ? "Подключена" : "Нет связи", connected: model.client.isConnected && model.client.state.cameraConnected,
-                    accent: signalGreen)
-                connectionRow("Home Assistant", icon: "house", detail: model.client.isConnected && model.client.state.haConnected
-                    ? "Подключён" : model.client.isConnected ? "Не подключён" : "Нет данных",
-                    connected: model.client.isConnected && model.client.state.haConnected, accent: portBlue)
-            }
-            Toggle(isOn: $model.automatic) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Свет на созвоне").font(.system(size: 12))
-                    Text("Включать автоматически")
-                        .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Label("Свет на созвоне", systemImage: "lightbulb").font(.headline)
+                    Spacer()
+                    Toggle("Включать автоматически", isOn: $model.automatic)
+                        .labelsHidden().toggleStyle(.switch).controlSize(.small)
+                        .help("Включать подсветку автоматически во время созвона")
                 }
+                Label(model.onCall ? "На созвоне" : "Свободен", systemImage: model.onCall ? "video.fill" : "video")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            .toggleStyle(.switch).controlSize(.small)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background { MenuPanelField() }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+
+            VStack(spacing: 10) {
+                connectionRow("Камера", icon: "camera",
+                              connected: model.client.isConnected && model.client.state.cameraConnected,
+                              detail: model.client.isConnected && model.client.state.cameraConnected ? "Подключена" : "Нет связи")
+                connectionRow("Home Assistant", icon: "house",
+                              connected: model.client.isConnected && model.client.state.haConnected,
+                              detail: model.client.isConnected ? (model.client.state.haConnected ? "Подключён" : "Не подключён") : "Нет данных")
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background { MenuPanelField() }
+            .padding(.horizontal, 10).padding(.bottom, 12)
+
+            HStack {
+                Button {
+                    dismiss()
+                    model.openMainWindow()
+                    NSApp.activate(ignoringOtherApps: true)
+                } label: { Label("Панель управления…", systemImage: "slider.horizontal.3") }
+                Spacer()
+                #if CANON_RIG_UPDATES
+                Button("Обновления…") { dismiss(); CanonRigApplicationDelegate.updates.checkForUpdates(nil) }
+                #endif
+                Button("Выйти") { NSApp.terminate(nil) }
+            }
+            .buttonStyle(.borderless)
+            .padding(.horizontal, 20).padding(.bottom, 14)
         }
-        .padding(16)
+        .frame(width: 356)
+        .fixedSize(horizontal: false, vertical: true)
+        .modifier(MenuPanelSurface())
     }
 
-    private var footer: some View {
-        HStack(spacing: 14) {
-            Button { model.reconnect() } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.plain)
-            .help("Переподключить LightController").accessibilityLabel("Переподключить LightController")
-            Button {
-                model.openMainWindow()
-                NSApplication.shared.activate(ignoringOtherApps: true)
-            } label: { Image(systemName: "gearshape") }
-            .buttonStyle(.plain)
-            .help("Открыть панель управления").accessibilityLabel("Открыть панель управления")
+    private func connectionRow(_ title: String, icon: String, connected: Bool, detail: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).frame(width: 18).foregroundStyle(.secondary)
+            Text(title).font(.subheadline.weight(.medium))
             Spacer()
-            #if CANON_RIG_UPDATES
-            Button("Обновления…") {
-                CanonRigApplicationDelegate.updates.checkForUpdates(nil)
-            }
-            .buttonStyle(.plain)
-            #endif
-            Button("Выйти") { NSApplication.shared.terminate(nil) }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
+            Text(detail).font(.caption).foregroundStyle(.secondary)
+            Image(systemName: connected ? "checkmark.circle.fill" : "minus.circle")
+                .foregroundStyle(connected ? Color.green : .secondary)
+                .accessibilityHidden(true)
         }
-        .font(.caption)
-        .padding(.horizontal, 16).padding(.vertical, 11)
-    }
-
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-            .tracking(0.8).foregroundStyle(.secondary)
-    }
-
-    private func connectionRow(_ title: String, icon: String, detail: String, connected: Bool, accent: Color) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: icon).frame(width: 16)
-            Text(title).font(.system(size: 11, weight: .medium, design: .rounded))
-            Spacer()
-            Text(detail).font(.system(size: 10)).foregroundStyle(.secondary)
-            Circle().fill(connected ? accent : Color.secondary.opacity(0.25)).frame(width: 6, height: 6)
-        }
-        .foregroundStyle(connected ? accent : .primary)
-        .padding(.horizontal, 10).frame(height: 34)
-        .background(connected ? accent.opacity(0.13) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(connected ? accent.opacity(0.32) : Color.primary.opacity(0.06), lineWidth: 1))
     }
 }
 
 struct ControlView: View {
     @State private var focusStep = 1
-    @State private var showSettings = false
     @State private var showFocus = false
     @State private var showLight = false
     @ObservedObject var model: AppModel
     @ObservedObject var flow: OnboardingFlow
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Image(systemName: "video")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.39, green: 0.80, blue: 0.31))
-                    .frame(width: 36, height: 30)
-                    .background(Color.green.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
-                Text("Canon Rig").font(.system(.headline, design: .rounded, weight: .semibold))
-                StatusDot(active: model.client.isConnected && model.client.state.cameraConnected,
-                          color: model.onCall ? .red : .green)
-                Text(model.onCall ? "На созвоне" : model.client.state.cameraConnected && model.client.isConnected ? "Готов" : "Нет связи с камерой")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Toggle("Автоматически", isOn: $model.automatic).toggleStyle(.switch).controlSize(.small)
-                    .tourTarget(.automation)
-                Button { showSettings = true } label: { Image(systemName: "gearshape") }
-                    .buttonStyle(.plain)
-                    .help("Подключение и настройки").accessibilityLabel("Настройки")
-                    .tourTarget(.settings)
-                    .popover(isPresented: $showSettings, arrowEdge: .top) {
-                        RigSettingsView(model: model)
-                    }
+        Group {
+            switch model.windowTab {
+            case .camera: cameraTab
+            case .settings: RigSettingsView(model: model)
             }
-            .padding(.horizontal, 16).padding(.vertical, 13)
-            .background(.ultraThinMaterial)
-            preview.frame(maxWidth: .infinity, maxHeight: .infinity)
-            HStack {
-                Text(model.client.cameraNotice ?? "Параметры применяются сразу. Свет для звонков — в панели «Свет».")
-                    .lineLimit(2)
-                Spacer()
-                if model.client.cameraBusy { ProgressView().controlSize(.small) }
-            }
-            .font(.caption).foregroundStyle(.secondary).padding(12)
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        .tint(Color(red: 0.39, green: 0.80, blue: 0.31))
         .overlayPreferenceValue(TourAnchors.self) { anchors in
             if flow.step == .tour {
                 InteractiveTour(flow: flow, anchors: anchors)
@@ -193,10 +123,27 @@ struct ControlView: View {
         }
     }
 
+    private var cameraTab: some View {
+        preview
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .top) {
+                if model.client.cameraBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                        .padding(7)
+                        .background(.black.opacity(0.6), in: Circle())
+                        .padding(.top, 16)
+                        .accessibilityLabel("Камера выполняет команду")
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
     private func showTourPanel() {
         showFocus = flow.step == .tour && flow.tourStep == .focus
         showLight = flow.step == .tour && flow.tourStep == .light
-        showSettings = false
+        if flow.step == .tour { model.selectTab(flow.tourStep == .settings ? .settings : .camera) }
     }
 
     private var preview: some View {
@@ -216,44 +163,51 @@ struct ControlView: View {
             }
             .padding(14).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             .tourTarget(.exposure)
-            .padding(16).environment(\.colorScheme, .dark)
+            .padding(16)
         }
         .overlay(alignment: .topLeading) {
             previewPanel(exposure, isVisible: showFocus)
                 .tourTarget(.focus)
+                .padding(.bottom, 96)
                 .padding(.leading, 16).padding(.top, 70)
         }
         .overlay(alignment: .topTrailing) {
             previewPanel(lighting, isVisible: showLight)
                 .tourTarget(.light)
+                .padding(.bottom, 96)
                 .padding(.trailing, 16).padding(.top, 70)
         }
         .overlay(alignment: .topLeading) {
             Button { showFocus.toggle(); showLight = false } label: {
-                Label("Фокус", systemImage: "viewfinder").padding(8)
+                Label("Фокус", systemImage: "viewfinder").padding(5)
             }
-            .buttonStyle(.bordered).tint(.black.opacity(0.7))
-            .padding(16).environment(\.colorScheme, .dark)
+            .buttonStyle(.bordered)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .padding(16)
         }
         .overlay(alignment: .topTrailing) {
             Button { showLight.toggle(); showFocus = false } label: {
-                Label("Свет", systemImage: "lightbulb").padding(8)
+                Label("Свет", systemImage: "lightbulb").padding(5)
             }
-            .buttonStyle(.bordered).tint(.black.opacity(0.7))
-            .padding(16).environment(\.colorScheme, .dark)
+            .buttonStyle(.bordered)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .padding(16)
         }
     }
 
     private func previewPanel<Content: View>(_ content: Content, isVisible: Bool) -> some View {
-        ScrollView { content.padding(14) }
-            .frame(width: 350, height: 300)
-            .background(Color.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 12))
+        let controls = content.padding(12)
+        return ViewThatFits(in: .vertical) {
+            controls.fixedSize(horizontal: false, vertical: true)
+            ScrollView { controls }
+        }
+            .frame(width: 350)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
             .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(.white.opacity(0.12), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(.quaternary, lineWidth: 1)
                     .allowsHitTesting(false)
             }
-            .environment(\.colorScheme, .dark)
             .opacity(isVisible ? 1 : 0)
             .allowsHitTesting(isVisible)
             .accessibilityHidden(!isVisible)
@@ -303,10 +257,6 @@ struct ControlView: View {
                 Button("Дальше") { model.client.focusStep(far: true, step: focusStep) }
             }
             .disabled(!model.client.isConnected || model.client.cameraBusy || !model.client.state.cameraCanFocusStep)
-            Text("Для ручной подстройки отключи Servo AF (видео), иначе камера может перефокусироваться.")
-                .font(.caption).foregroundStyle(.secondary)
-            Text(model.client.cameraNotice ?? "Выбор применяется сразу. Значения обновляются по ответу камеры.")
-                .font(.caption).foregroundStyle(.secondary).padding(.top, 12)
         }
         .frame(maxWidth: .infinity)
     }
@@ -338,7 +288,7 @@ struct ControlView: View {
     }
 
     private var lighting: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 9) {
             Picker("Цвет света", selection: $model.lightColorMode) {
                 Text("RGB").tag(LightColorMode.rgb)
                 Text("Температура").tag(LightColorMode.temperature)
@@ -363,18 +313,26 @@ struct ControlView: View {
                     Text("Холоднее")
                 }.font(.caption).foregroundStyle(.secondary)
             } else if !model.usesAnimatedColors {
-                HStack(spacing: 22) {
+                HStack(alignment: .center, spacing: 18) {
                     LightColorWheel(selection: $model.wheel).padding(6)
-                    VStack(alignment: .leading, spacing: 6) {
-                        RoundedRectangle(cornerRadius: 6).fill(model.lightColor.color)
-                            .frame(width: 38, height: 20)
-                        Text(String(format: "#%02X%02X%02X", model.lightColor.red, model.lightColor.green, model.lightColor.blue))
-                            .font(.caption.monospaced())
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 7) {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(model.lightColor.color)
+                                .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(.primary.opacity(0.15)) }
+                                .frame(width: 22, height: 18)
+                            Text(String(format: "#%02X%02X%02X", model.lightColor.red, model.lightColor.green, model.lightColor.blue))
+                                .font(.subheadline.monospaced())
+                        }
+                        brightnessSlider
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 
-            valueSlider("Яркость", value: $model.lightBrightness, range: 0...100, suffix: "%")
+            if model.lightColorMode == .temperature || model.usesAnimatedColors {
+                brightnessSlider
+            }
             Picker("Эффект", selection: $model.lightEffect) {
                 Text("Статичный").tag("solid")
                 Text("Дыхание").tag("breathe")
@@ -387,23 +345,35 @@ struct ControlView: View {
                 valueSlider("Скорость", value: $model.lightSpeed, range: 0...100)
             }
             HStack {
-                Button("Выключить") { model.applyLight(enabled: false) }
+                Button(model.client.state.lightEnabled == true ? "Выключить" : "Включить") {
+                    model.toggleLightPower()
+                }
+                .disabled(!model.client.isConnected || !model.client.state.lightReady || model.client.state.lightEnabled == nil)
                 Spacer()
                 Button("Сохранить для созвонов") { model.saveLightPreset() }
                     .disabled(!model.client.isConnected)
             }
-            if let notice = model.profileNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
+            if let notice = model.client.profileNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
         }
         .frame(maxWidth: .infinity)
     }
 
+    private var brightnessSlider: some View {
+        valueSlider("Яркость", value: $model.lightBrightness, range: 0...100, suffix: "%")
+    }
+
     private func valueSlider(_ title: String, value: Binding<Int>, range: ClosedRange<Int>, suffix: String = "") -> some View {
-        HStack {
-            Text(title).frame(width: 66, alignment: .leading)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title).font(.headline)
+                Spacer()
+                Text("\(value.wrappedValue)\(suffix)")
+                    .font(.system(size: 30, weight: .medium, design: .rounded)).monospacedDigit()
+            }
             Slider(value: Binding(get: { Double(value.wrappedValue) },
                                   set: { value.wrappedValue = Int($0) }),
                    in: Double(range.lowerBound)...Double(range.upperBound), step: 1)
-            Text("\(value.wrappedValue)\(suffix)").monospacedDigit().frame(width: 40)
+                .controlSize(.large).accessibilityLabel(title)
         }
     }
 

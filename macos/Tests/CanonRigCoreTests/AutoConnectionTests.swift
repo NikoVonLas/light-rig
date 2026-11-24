@@ -58,6 +58,32 @@ import Testing
     }
 }
 
+@Test @MainActor func previewClickMarksTheSamePointThatCanonReceives() throws {
+    let usb = TestSerial()
+    let suite = "canonrig-focus-test-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let client = RigClient(host: "127.0.0.1", defaults: defaults, ports: { ["/dev/cu.usbserial-test"] },
+                           serialFactory: { usb }, now: { Date() })
+    defer { client.disconnect() }
+    client.connect()
+    try usb.reply(["cameraConnected": .bool(true), "cameraCapabilities": .object(["focusPoint": .bool(true)]),
+                   "cameraDiagnostics": .object(["jpegWidth": .number(1024), "jpegHeight": .number(576)])])
+    let point = try #require(PreviewFocusMapping.point(x: 330, y: 120, viewWidth: 960, viewHeight: 360,
+                                                       videoWidth: 1920, videoHeight: 1080))
+    let aspect = 16.0 / 9
+    let rect = try #require(PreviewFocusMapping.videoRect(in: CGSize(width: 960, height: 360), aspect: aspect))
+    #expect(abs(rect.minX + point.x * rect.width - 330) < 1e-8)
+    #expect(abs(rect.minY + point.y * rect.height - 120) < 1e-8)
+    #expect(!client.focusPoint(point, videoAspect: 4.0 / 3))
+    #expect(client.focusPoint(point, videoAspect: aspect))
+    let message = try #require(usb.messages.last)
+    #expect(message.type == "camera.focusPoint")
+    #expect(message.payload["x"] == .number(point.x))
+    #expect(message.payload["y"] == .number(point.y))
+    #expect(!client.focusPoint(.zero, videoAspect: aspect))
+}
+
 @Test @MainActor func clientSwitchesFromUSBToNetworkAndBackWithoutReplayingCameraCommands() throws {
     let suite = "canonrig-auto-test-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
@@ -192,4 +218,70 @@ import Testing
     #expect(save.payload["username"] == .string("example"))
     client.disconnect()
     #expect(client.usbSettings == nil)
+}
+
+@Test @MainActor func callLightSaveRequiresMatchingReadback() throws {
+    let usb = TestSerial()
+    let client = RigClient(host: "127.0.0.1", defaults: .standard, ports: { ["/dev/cu.usbserial-test"] },
+                           serialFactory: { usb }, now: { Date() })
+    client.connect()
+    defer { client.disconnect() }
+    try usb.reply()
+    for matches in [false, true] {
+        client.saveLightPreset(slot: 3, name: "Созвон", enabled: true, brightness: 69, mode: "rgb",
+                               red: 255, green: 157, blue: 64, warm: 65, cool: 65, effect: "solid", speed: 40)
+        let sent = try #require(usb.messages.last)
+        var stored = sent.payload
+        if !matches { stored["green"] = .number(0) }
+        var reply = WireEnvelope(id: sent.id, type: "rig.state", payload: ["callLight": .object(stored)])
+        reply.ok = true
+        client.accept(try JSONEncoder().encode(reply))
+        #expect(client.state.callLight?.green == (matches ? 157 : 0))
+        #expect(client.profileNotice == (matches ? "Профиль «Созвон» сохранён на LightController"
+                                                : "LightController вернул другой профиль. Повтори сохранение."))
+    }
+}
+
+@Test @MainActor func toggleLightOffAndBackOnDuringOneCall() throws {
+    let usb = TestSerial()
+    let client = RigClient(host: "127.0.0.1", defaults: .standard, ports: { ["/dev/cu.usbserial-test"] },
+                           serialFactory: { usb }, now: { Date() })
+    client.connect()
+    defer { client.disconnect() }
+    for enabled in [true, false] {
+        try usb.reply(["mode": .string("on_call"), "lightReady": .bool(true), "lightEnabled": .bool(enabled),
+                       "lightOutput": .object(["lastRed": .number(0), "lastGreen": .number(0), "lastBlue": .number(0)])])
+        #expect(client.state.lightEnabled == enabled)
+        client.toggleLightPower()
+        let sent = try #require(usb.messages.last)
+        #expect(sent.type == "light.set")
+        #expect(sent.payload == ["enabled": .bool(!enabled)])
+    }
+    for red in [0, 175] {
+        try usb.reply(["lightReady": .bool(true), "lightOutput": .object([
+            "lastRed": .number(Double(red)), "lastGreen": .number(0), "lastBlue": .number(0), "txFrames": .number(8)])])
+        #expect(client.state.lightEnabled == (red > 0))
+    }
+}
+
+@Test @MainActor func relaunchRestoresStoredPresetOnceAfterBoardAcceptsActiveVideo() throws {
+    let usb = TestSerial()
+    let client = RigClient(host: "127.0.0.1", defaults: .standard, ports: { ["/dev/cu.usbserial-test"] },
+                           serialFactory: { usb }, now: { Date() })
+    client.connect()
+    defer { client.disconnect() }
+    let board: [String: JSONValue] = ["homeAssistant": .object(["deviceId": .string("test-board")]),
+        "mode": .string("on_call"), "lightReady": .bool(true), "lightEffect": .string("rainbow")]
+    try usb.reply(board)
+    var reporter = PresenceReporter(clientID: "test-mac", name: "Mac")
+    for (accepted, expectedCount) in [(false, 0), (true, 1), (true, 1)] {
+        let message = reporter.envelope(onCall: true, cameraInCall: true, automatic: true, preview: true)
+        client.sendPresence(message)
+        var reply = WireEnvelope(id: message.id, type: "rig.state", payload: board)
+        reply.ok = accepted
+        client.accept(try JSONEncoder().encode(reply))
+        let restores = usb.messages.filter { $0.type == "light.applyPreset" }
+        #expect(restores.count == expectedCount)
+        if let restore = restores.first { #expect(restore.payload["slot"] == .number(3)) }
+    }
 }

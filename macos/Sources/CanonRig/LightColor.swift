@@ -40,12 +40,31 @@ struct WheelSelection: Equatable {
     var hue: Double
     var saturation: Double
 
+    var value = 1.0
+
+    init(hue: Double, saturation: Double) {
+        self.hue = hue
+        self.saturation = saturation
+    }
+
+    init(color: LightRGB) {
+        let r = Double(color.red), g = Double(color.green), b = Double(color.blue)
+        let high = max(r, g, b), delta = high - min(r, g, b)
+        value = high / 255
+        saturation = high == 0 ? 0 : delta / high
+        if delta == 0 { hue = 0 }
+        else if high == r { hue = (g - b) / delta / 6 }
+        else if high == g { hue = ((b - r) / delta + 2) / 6 }
+        else { hue = ((r - g) / delta + 4) / 6 }
+        if hue < 0 { hue += 1 }
+    }
+
     var rgb: LightRGB {
         let h = hue * 6
         func channel(_ offset: Double) -> Int {
             let k = (offset + h).truncatingRemainder(dividingBy: 6)
             let chroma = max(0, min(1, min(k, 4 - k)))
-            return Int((255 * (1 - saturation * chroma)).rounded())
+            return Int((255 * value * (1 - saturation * chroma)).rounded())
         }
         return LightRGB(red: channel(5), green: channel(3), blue: channel(1))
     }

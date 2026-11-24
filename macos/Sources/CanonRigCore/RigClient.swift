@@ -56,6 +56,9 @@ public final class RigClient: ObservableObject {
     private let serialFactory: () -> any RigSerialConnection
     private let now: () -> Date
     private let defaults: UserDefaults
+    // A rapid relaunch can leave the board in the same aggregate call across Mac sessions.
+    private var restoredCallDevices = Set<String>()
+    private var startupPresence: (id: String, device: String, sentAt: Date)?
     private var lastHeartbeat = Date.distantPast
     private var lastReply = Date.distantPast
 
@@ -189,6 +192,9 @@ public final class RigClient: ObservableObject {
     }
 
     public func disconnect() {
+        startupPresence = nil
+        if presetSaveRequest != nil { profileNotice = "Связь прервана до подтверждения сохранения" }
+        presetSaveRequest = nil
         usbSettings = nil
         settingsReadID = nil
         mqttSaveID = nil
@@ -247,10 +253,28 @@ public final class RigClient: ObservableObject {
         send(request)
     }
 
+    public func sendPresence(_ heartbeat: WireEnvelope) {
+        let device = state.deviceID
+        if heartbeat.payload["automatic"] != .bool(true) || heartbeat.payload["onCall"] != .bool(true) {
+            startupPresence = nil
+        } else if isConnected, !device.isEmpty, !restoredCallDevices.contains(device),
+                  now().timeIntervalSince(startupPresence?.sentAt ?? .distantPast) > 5 {
+            startupPresence = (heartbeat.id, device, now())
+        }
+        send(heartbeat)
+    }
+
+    private func honorManualLight() {
+        guard isConnected, !state.deviceID.isEmpty else { return }
+        restoredCallDevices.insert(state.deviceID)
+        startupPresence = nil
+    }
+
     public func setLight(enabled: Bool, brightness: Int, mode: String = "neutral",
                          red: Int = 255, green: Int = 255, blue: Int = 255,
                          warm: Int = 65, cool: Int = 65,
                          effect: String = "solid", speed: Int = 40) {
+        honorManualLight()
         send(WireEnvelope(type: "light.set", payload: [
             "enabled": .bool(enabled), "brightness": .number(Double(brightness)),
             "mode": .string(mode),
@@ -261,6 +285,24 @@ public final class RigClient: ObservableObject {
         ]))
     }
 
+    public func toggleLightPower() {
+        guard isConnected, state.lightReady, let enabled = state.lightEnabled else { return }
+        honorManualLight()
+        if !enabled, let frames = state.lightFrameCount, frames <= 1 {
+            // The boot OFF frame has no color to restore yet.
+            applyLightPreset(3)
+        } else {
+            send(WireEnvelope(type: "light.set", payload: ["enabled": .bool(!enabled)]))
+        }
+        // Legacy firmware can acknowledge before the LED task transmits its frame.
+        let connection = generation
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(100))
+            guard let self, self.isConnected, self.generation == connection else { return }
+            self.send(WireEnvelope(type: "hello"))
+        }
+    }
+
     public func applyLightPreset(_ slot: Int) {
         send(WireEnvelope(type: "light.applyPreset", payload: ["slot": .number(Double(slot))]))
     }
@@ -269,17 +311,23 @@ public final class RigClient: ObservableObject {
         send(WireEnvelope(type: "light.captureStart"))
     }
 
+    @Published public private(set) var profileNotice: String?
+    private var presetSaveRequest: WireEnvelope?
+
     public func saveLightPreset(slot: Int, name: String, enabled: Bool, brightness: Int,
                                 mode: String, red: Int, green: Int, blue: Int,
                                 warm: Int, cool: Int, effect: String, speed: Int) {
-        send(WireEnvelope(type: "preset.save", payload: [
+        let request = WireEnvelope(type: "preset.save", payload: [
             "slot": .number(Double(slot)), "name": .string(name), "enabled": .bool(enabled),
             "brightness": .number(Double(brightness)), "mode": .string(mode),
             "red": .number(Double(red)), "green": .number(Double(green)),
             "blue": .number(Double(blue)), "warm": .number(Double(warm)),
             "cool": .number(Double(cool)), "effect": .string(effect),
             "speed": .number(Double(speed)),
-        ]))
+        ])
+        presetSaveRequest = request
+        profileNotice = "Сохранение…"
+        send(request)
     }
 
     public func cameraSet(kind: CameraExposureKind, property: CameraProperty, value: UInt32) {
@@ -308,21 +356,24 @@ public final class RigClient: ObservableObject {
         ]))
     }
 
-    public func focusPoint(_ point: CGPoint, videoAspect: Double) {
-        guard isConnected, state.cameraConnected, !cameraBusy else { return }
+    @discardableResult
+    public func focusPoint(_ point: CGPoint, videoAspect: Double) -> Bool {
+        guard isConnected, state.cameraConnected else { cameraNotice = "Нет связи с камерой"; return false }
+        guard !cameraBusy else { cameraNotice = "Canon ещё выполняет команду"; return false }
         guard point.x.isFinite, point.y.isFinite, (0...1).contains(point.x), (0...1).contains(point.y),
-              videoAspect.isFinite, videoAspect > 0 else { return }
+              videoAspect.isFinite, videoAspect > 0 else { return false }
         if !state.cameraCanFocusPoint {
-            guard state.cameraCanPrepareFocus else { cameraNotice = "Фокус по клику недоступен"; return }
+            guard state.cameraCanPrepareFocus else { cameraNotice = "Фокус по клику недоступен"; return false }
             deferredFocusPoint = (point, videoAspect)
             sendCamera(WireEnvelope(type: "camera.prepareFocus"))
             cameraNotice = "Читаю координаты AF с камеры…"
-            return
+            return true
         }
         guard let cameraAspect = state.cameraPreviewAspect, abs(cameraAspect / videoAspect - 1) < 0.02 else {
-            cameraNotice = "Форматы HDMI и Live View различаются — точка AF не отправлена"; return
+            cameraNotice = "Форматы HDMI и Live View различаются — точка AF не отправлена"; return false
         }
         sendCamera(WireEnvelope(type: "camera.focusPoint", payload: ["x": .number(point.x), "y": .number(point.y)]))
+        return true
     }
 
     private func sendCamera(_ envelope: WireEnvelope) {
@@ -435,9 +486,28 @@ public final class RigClient: ObservableObject {
         guard let envelope = try? JSONDecoder().decode(WireEnvelope.self, from: data),
               envelope.v == 1, envelope.type == "rig.state" else { return }
         state = RigState(envelope: envelope)
+        if let pending = startupPresence, pending.id == envelope.id {
+            startupPresence = nil
+            if envelope.ok == true, pending.device == state.deviceID, state.lightReady {
+                restoredCallDevices.insert(pending.device)
+                applyLightPreset(3)
+            }
+        }
         if activeConnectionMode == .usb, envelope.id == settingsReadID {
             settingsReadID = nil
             if envelope.ok == true, case .object(let values) = envelope.payload["usbSettings"] { usbSettings = values }
+        }
+        if let request = presetSaveRequest, envelope.id == request.id {
+            presetSaveRequest = nil
+            if envelope.ok != true {
+                profileNotice = "Не удалось сохранить профиль на LightController"
+            } else if state.callLight == nil {
+                profileNotice = "Профиль отправлен. Эта прошивка не подтверждает сохранённый цвет."
+            } else if state.callLight == RigState.CallLight(.object(request.payload)) {
+                profileNotice = "Профиль «Созвон» сохранён на LightController"
+            } else {
+                profileNotice = "LightController вернул другой профиль. Повтори сохранение."
+            }
         }
         if envelope.id == mqttSaveID {
             mqttSaveID = nil

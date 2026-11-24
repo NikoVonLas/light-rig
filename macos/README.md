@@ -13,12 +13,13 @@ swift run CanonRig
 Light automation follows system-wide video capture, including the Canon Rig preview.
 It stays active until the last video consumer releases the camera.
 Detection is debounced for two seconds on entry and three seconds on exit.
-Microphone activity is diagnostic only.
+The call-light toggle is in the menu bar panel. The app polls video activity only.
 
 The interface exposes one light profile, “Созвон”, without a preset list.
 “Сохранить свет для созвонов” stores it in the previously selected call slot
 (wire index 3 by default), preserving existing board presets behind the scenes.
-The UI acknowledges sending the save request, not verified flash persistence.
+The editor reads the stored color from the controller. It confirms a save after
+the controller commits the preset and returns matching color, brightness and effect.
 Color, brightness, and effect edits apply live (latest value every 150 ms,
 including while dragging). Editing turns RGB on; OFF cancels pending edits.
 Preset loading and automatic call transitions also cancel pending edits so

@@ -1,3 +1,4 @@
+#include "esp_attr.h"
 #include "rig_network.h"
 
 #include <stdio.h>
@@ -100,8 +101,9 @@ static char *snapshot_json(const char *id, const char *type)
     cJSON_AddBoolToObject(capabilities, "autofocus", state.camera_connected && state.camera_can_af);
     cJSON_AddBoolToObject(capabilities, "cancelAF", state.camera_connected && state.camera_can_cancel_af);
     cJSON_AddBoolToObject(capabilities, "focusStep", state.camera_connected && state.camera_can_focus_step);
-    cJSON_AddBoolToObject(capabilities, "prepareFocus", state.camera_connected && (state.camera_extra_operations & 3) == 3);
-    cJSON_AddBoolToObject(capabilities, "focusPoint", state.camera_connected && (state.camera_extra_operations & 3) == 3 && state.camera_af_width && state.camera_af_height);
+    bool touch_af = state.camera_connected && (state.camera_extra_operations & 3) == 3 && state.camera_can_af && state.camera_can_cancel_af;
+    cJSON_AddBoolToObject(capabilities, "prepareFocus", touch_af);
+    cJSON_AddBoolToObject(capabilities, "focusPoint", touch_af && state.camera_af_width && state.camera_af_height);
     cJSON *command = cJSON_AddObjectToObject(payload, "cameraCommand");
     cJSON_AddStringToObject(command, "id", state.camera_command_id);
     cJSON_AddStringToObject(command, "status", state.camera_command_status);
@@ -131,14 +133,26 @@ static char *snapshot_json(const char *id, const char *type)
     cJSON_AddNumberToObject(diagnostics, "jpegWidth", state.camera_jpeg_width);
     cJSON_AddNumberToObject(diagnostics, "jpegHeight", state.camera_jpeg_height);
     cJSON_AddBoolToObject(payload, "lightReady", state.light_ready);
+    cJSON_AddBoolToObject(payload, "lightEnabled", rig_light_get_command().enabled);
     cJSON_AddNumberToObject(payload, "lightBrightness", state.light_brightness);
     cJSON_AddNumberToObject(payload, "lightPreset", state.light_preset);
     cJSON_AddStringToObject(payload, "lightEffect", state.light_effect);
+    light_command_t preset = rig_light_get_call_preset();
+    if (preset.mode == LIGHT_RGB) {
+        cJSON *call_light = cJSON_AddObjectToObject(payload, "callLight");
+        cJSON_AddNumberToObject(call_light, "red", preset.red);
+        cJSON_AddNumberToObject(call_light, "green", preset.green);
+        cJSON_AddNumberToObject(call_light, "blue", preset.blue);
+        cJSON_AddNumberToObject(call_light, "brightness", preset.brightness);
+        cJSON_AddNumberToObject(call_light, "speed", preset.speed);
+        cJSON_AddStringToObject(call_light, "effect", rig_light_effect_name(preset.effect));
+    }
     light_output_status_t output = rig_light_get_output_status();
     cJSON *output_json = cJSON_AddObjectToObject(payload, "lightOutput");
     cJSON_AddNumberToObject(output_json, "gpio", output.gpio);
     cJSON_AddBoolToObject(output_json, "valid", output.valid);
     cJSON_AddStringToObject(output_json, "profile", "WS2812B");
+    cJSON_AddStringToObject(output_json, "transport", "spi-dma");
     cJSON_AddNumberToObject(output_json, "txFrames", output.tx_frames);
     cJSON_AddNumberToObject(output_json, "lastRed", output.last_tx.red);
     cJSON_AddNumberToObject(output_json, "lastGreen", output.last_tx.green);
@@ -288,11 +302,11 @@ static light_command_t parse_light_command(cJSON *payload)
     return command;
 }
 
-static void apply_command(cJSON *root)
+static const char *apply_command(cJSON *root)
 {
     cJSON *type = cJSON_GetObjectItemCaseSensitive(root, "type");
     cJSON *payload = cJSON_GetObjectItemCaseSensitive(root, "payload");
-    if (!cJSON_IsString(type) || !cJSON_IsObject(payload)) return;
+    if (!cJSON_IsString(type) || !cJSON_IsObject(payload)) return "invalid command";
 
     if (strcmp(type->valuestring, "rig.setState") == 0) {
         cJSON *mode_value = cJSON_GetObjectItemCaseSensitive(payload, "mode");
@@ -309,13 +323,14 @@ static void apply_command(cJSON *root)
     } else if (strcmp(type->valuestring, "preset.save") == 0) {
         cJSON *slot = cJSON_GetObjectItemCaseSensitive(payload, "slot");
         cJSON *name = cJSON_GetObjectItemCaseSensitive(payload, "name");
-        if (cJSON_IsNumber(slot) && cJSON_IsString(name)) {
-            light_command_t command = parse_light_command(payload);
-            rig_light_save_preset(slot->valueint, name->valuestring, &command);
-        }
+        if (!cJSON_IsNumber(slot) || slot->valuedouble != slot->valueint ||
+            slot->valueint < 0 || slot->valueint > UINT8_MAX || !cJSON_IsString(name)) return "invalid preset";
+        light_command_t command = parse_light_command(payload);
+        if (!rig_light_save_preset(slot->valueint, name->valuestring, &command)) return "preset save failed";
     } else if (strcmp(type->valuestring, "light.captureStart") == 0) {
         rig_light_probe_arm();
     }
+    return NULL;
 }
 
 static void scan_task(void *argument)
@@ -528,7 +543,7 @@ static char *handle_message(const char *message, bool usb)
     else if (!strcmp(type->valuestring, "presence.update")) error = rig_presence_receive(payload);
     else if (!strcmp(type->valuestring, "homeassistant.configure")) error = rig_homeassistant_configure(payload, usb);
     else if (!strncmp(type->valuestring, "camera.", 7)) error = camera_command(type->valuestring, cJSON_IsString(id) ? id->valuestring : NULL, payload);
-    else apply_command(root);
+    else error = apply_command(root);
     if (usb && !error) {
         if (!s_last_serial_request_us) rig_state_note_activity();
         s_last_serial_request_us = esp_timer_get_time();
@@ -557,7 +572,7 @@ static char *handle_message(const char *message, bool usb)
 static void serial_task(void *argument)
 {
     (void)argument;
-    static char line[8193];
+    static EXT_RAM_BSS_ATTR char line[8193];
     size_t used = 0;
     bool overflow = false;
     uint8_t bytes[128];
@@ -645,7 +660,7 @@ static esp_err_t ota_handler(httpd_req_t *request)
     return ESP_OK;
 }
 
-static void start_http_server(void)
+static bool start_http_server(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 12288;
@@ -654,7 +669,7 @@ static void start_http_server(void)
     if (error != ESP_OK) {
         ESP_LOGE(TAG, "HTTP unavailable: %s; USB recovery remains available", esp_err_to_name(error));
         rig_state_set_test("HTTP START ERROR");
-        return;
+        return false;
     }
     const httpd_uri_t routes[] = {
         {.uri = "/health", .method = HTTP_GET, .handler = health_handler},
@@ -667,6 +682,7 @@ static void start_http_server(void)
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         ESP_ERROR_CHECK(httpd_register_uri_handler(s_http_server, &routes[i]));
     }
+    return true;
 }
 
 static void wifi_event(void *argument, esp_event_base_t base, int32_t id, void *data)
@@ -779,7 +795,7 @@ static void start_station(const char *ssid, const char *password)
     ESP_ERROR_CHECK(esp_wifi_start());
 }
 
-void rig_network_init(void)
+bool rig_network_init(void)
 {
     s_command_lock = xSemaphoreCreateMutex();
     s_wifi_operation_lock = xSemaphoreCreateMutex();
@@ -797,7 +813,7 @@ void rig_network_init(void)
     start_serial(); // Recovery transport must start before Wi-Fi/HTTP.
     if (!strcmp(s_network_mode, "usb")) {
         rig_state_set_wifi(false, "USB");
-        return;
+        return true;
     }
     wifi_stack_init();
 
@@ -812,7 +828,8 @@ void rig_network_init(void)
     ESP_ERROR_CHECK(mdns_hostname_set("canonrig"));
     ESP_ERROR_CHECK(mdns_instance_name_set("LightController"));
     ESP_ERROR_CHECK(mdns_service_add("LightController", "_canonrig", "_tcp", 80, NULL, 0));
-    start_http_server();
+    bool server_ready = start_http_server();
     if (!strcmp(s_network_mode, "router"))
         configASSERT(xTaskCreate(wifi_recovery_task, "wifi_recovery", 3072, NULL, 2, NULL) == pdPASS);
+    return server_ready;
 }

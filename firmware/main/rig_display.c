@@ -1,4 +1,5 @@
 #include "rig_display.h"
+#include "rig_boot_mark.h"
 
 #include <ctype.h>
 #include <stdatomic.h>
@@ -126,6 +127,8 @@ static void draw_text(int x, int y, const char *text, int scale, uint16_t color)
 static void display_task(void *argument)
 {
     (void)argument;
+    // Keep the boot mark visible while the other peripherals start.
+    vTaskDelay(pdMS_TO_TICKS(900));
     uint32_t previous_revision = 0;
     int64_t last_change = esp_timer_get_time();
     while (true) {
@@ -207,7 +210,7 @@ void rig_display_init(void)
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
         .spi_mode = 0,
-        .trans_queue_depth = 10,
+        .trans_queue_depth = 1, // flush_frame waits for each strip.
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST,
                                               &io_config, &io));
@@ -239,16 +242,22 @@ void rig_display_init(void)
     }
     const esp_lcd_panel_io_callbacks_t callbacks = {.on_color_trans_done = color_done};
     ESP_ERROR_CHECK(esp_lcd_panel_io_register_event_callbacks(io, &callbacks, NULL));
+    const uint16_t background = rgb565(10, 13, 18);
+    const uint16_t icon[] = {background, rgb565(40, 77, 38), rgb565(70, 140, 59), rgb565(99, 204, 79)};
+    const uint16_t title[] = {background, rgb565(88, 91, 95), rgb565(167, 169, 173), rgb565(245, 247, 250)};
+    fill(background);
+    for (int y = 0; y < BOOT_MARK_HEIGHT; y++) {
+        const uint16_t *palette = y < BOOT_ICON_ROWS ? icon : title;
+        uint16_t *row = s_framebuffer + ((LCD_HEIGHT - BOOT_MARK_HEIGHT) / 2 + y) * LCD_WIDTH
+                                      + (LCD_WIDTH - BOOT_MARK_WIDTH) / 2;
+        for (int x = 0; x < BOOT_MARK_WIDTH; x++) {
+            unsigned shift = 6 - 2 * (x % 4);
+            row[x] = palette[(boot_mark[y][x / 4] >> shift) & 3];
+        }
+    }
+    flush_frame();
     ESP_ERROR_CHECK(gpio_set_level(PIN_BL, 1));
     atomic_store(&s_awake, true);
-    fill(rgb565(255, 255, 255));
-    rectangle(0, 0, 80, 100, rgb565(255, 0, 0));
-    rectangle(80, 0, 80, 100, rgb565(0, 255, 0));
-    rectangle(160, 0, 80, 100, rgb565(0, 0, 255));
-    draw_text(20, 112, "LightController", 2, rgb565(0, 0, 0));
-    flush_frame();
-    ESP_LOGI(TAG, "LCD V3: startup color bars sent, backlight GPIO33 enabled");
-    vTaskDelay(pdMS_TO_TICKS(2500));
     if (xTaskCreate(display_task, "rig_display", 4096, NULL, 4, NULL) != pdPASS) {
         ESP_LOGE(TAG, "display task creation failed");
         rig_state_set_fault("display task");

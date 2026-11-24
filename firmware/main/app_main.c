@@ -34,11 +34,17 @@ void app_main(void)
     rig_camera_init();
     rig_presence_init();
     rig_homeassistant_init();
-    rig_network_init();
+    bool network_ready = rig_network_init();
 
     const esp_partition_t *running = esp_ota_get_running_partition();
     esp_ota_img_states_t state;
     if (esp_ota_get_state_partition(running, &state) == ESP_OK && state == ESP_OTA_IMG_PENDING_VERIFY) {
+        if (!network_ready) {
+            ESP_LOGE(TAG, "HTTP server failed during OTA validation; requesting rollback");
+            error = esp_ota_mark_app_invalid_rollback_and_reboot();
+            ESP_LOGE(TAG, "Rollback failed: %s; USB recovery available", esp_err_to_name(error));
+            return;
+        }
         ESP_LOGI(TAG, "new OTA image reached healthy application state; accepting it");
         ESP_ERROR_CHECK(esp_ota_mark_app_valid_cancel_rollback());
     }

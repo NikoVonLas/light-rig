@@ -81,6 +81,7 @@ private final class PreviewSurface: NSView {
     let previewLayer: AVCaptureVideoPreviewLayer
     var onFocus: ((CGPoint, Double) -> Void)?
     override var isFlipped: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
         guard let input = previewLayer.session?.inputs.first as? AVCaptureDeviceInput,
@@ -113,10 +114,41 @@ private final class PreviewSurface: NSView {
 
 struct CameraPreview: View {
     @ObservedObject var controller: CameraPreviewController
-    var onFocus: ((CGPoint, Double) -> Void)? = nil
+    var onFocus: ((CGPoint, Double) -> Bool)? = nil
+    private struct FocusMarker {
+        let id = UUID()
+        let point: CGPoint
+        let aspect: Double
+        let requested: Bool
+    }
+    @State private var marker: FocusMarker?
 
     var body: some View {
-        PreviewLayerView(session: controller.session, onFocus: onFocus)
+        PreviewLayerView(session: controller.session) { point, aspect in
+            guard let onFocus else { return }
+            marker = FocusMarker(point: point, aspect: aspect, requested: onFocus(point, aspect))
+        }
+            .overlay {
+                GeometryReader { geometry in
+                    if controller.status.isEmpty, let marker,
+                       let rect = PreviewFocusMapping.videoRect(in: geometry.size, aspect: marker.aspect) {
+                        Image(systemName: marker.requested ? "viewfinder" : "xmark")
+                            .font(.system(size: 36, weight: .medium))
+                            .foregroundStyle(marker.requested ? Color.white : Color.orange)
+                            .shadow(color: .black.opacity(0.9), radius: 1.5)
+                            .position(x: rect.minX + marker.point.x * rect.width,
+                                      y: rect.minY + marker.point.y * rect.height)
+                    }
+                }
+                .clipped()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+            .task(id: marker?.id) {
+                guard let id = marker?.id else { return }
+                do { try await Task.sleep(for: .milliseconds(1400)) } catch { return }
+                if marker?.id == id { marker = nil }
+            }
             .overlay {
                 if !controller.status.isEmpty {
                     Text(controller.status)

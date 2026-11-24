@@ -70,6 +70,31 @@ public struct RigState: Equatable, Sendable {
     public var haNeedsCredentials = false
     public var hasPersistentSettings = false
     public var haRequiresAuth = false
+    public struct CallLight: Equatable, Sendable {
+        public let red, green, blue, brightness, speed: Int
+        public let effect: String
+
+        init?(_ value: JSONValue?) {
+            guard case .object(let fields) = value else { return nil }
+            func number(_ name: String, maximum: Int) -> Int? {
+                guard case .number(let raw) = fields[name], let n = Int(exactly: raw),
+                      (0...maximum).contains(n) else { return nil }
+                return n
+            }
+            guard let red = number("red", maximum: 255), let green = number("green", maximum: 255),
+                  let blue = number("blue", maximum: 255), let brightness = number("brightness", maximum: 100),
+                  let speed = number("speed", maximum: 100), case .string(let effect) = fields["effect"],
+                  ["solid", "breathe", "rainbow", "color_cycle"].contains(effect) else { return nil }
+            self.red = red
+            self.green = green
+            self.blue = blue
+            self.brightness = brightness
+            self.speed = speed
+            self.effect = effect
+        }
+    }
+
+    public var callLight: CallLight?
     public struct LightProbe: Equatable, Sendable {
         public var armed = false
         public var captured = false
@@ -116,6 +141,8 @@ public struct RigState: Equatable, Sendable {
     public var cameraCommandID = ""
     public var cameraCommandStatus = ""
     public var cameraCommandMessage = ""
+    public var lightEnabled: Bool?
+    public var lightFrameCount: UInt32?
     public var lightReady = false
     public var lightBrightness = 60
     public var lightPreset = 0
@@ -198,6 +225,16 @@ public struct RigState: Equatable, Sendable {
             if case .string(let value) = command["id"] { cameraCommandID = value }
             if case .string(let value) = command["status"] { cameraCommandStatus = value }
             if case .string(let value) = command["message"] { cameraCommandMessage = value }
+        }
+        callLight = CallLight(envelope.payload["callLight"])
+        lightEnabled = boolean(envelope.payload["lightEnabled"])
+        if case .object(let output) = envelope.payload["lightOutput"] {
+            if case .number(let count) = output["txFrames"] { lightFrameCount = UInt32(exactly: count) }
+            // Older boards report the last transmitted RGB frame only.
+            if lightEnabled == nil, case .number(let r) = output["lastRed"],
+               case .number(let g) = output["lastGreen"], case .number(let b) = output["lastBlue"] {
+                lightEnabled = r > 0 || g > 0 || b > 0
+            }
         }
         if case .bool(let value) = envelope.payload["lightReady"] { lightReady = value }
         if case .number(let value) = envelope.payload["lightBrightness"] { lightBrightness = Int(value) }

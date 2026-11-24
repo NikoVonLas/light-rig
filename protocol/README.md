@@ -21,8 +21,14 @@ Missing `wifiScan` means older firmware: clients must offer manual SSID entry.
 and hardware `pullUp` / `pullDown` settings. Current output is IO17 with internal
 pull-down enabled and pull-up disabled. These fields describe pad configuration,
 not proof of a correct waveform or physical lamp response. The WS2812B firmware
-also reports `profile`, the completed RMT frame count `txFrames`, and the
+also reports `profile`, `transport` (`spi-dma`), the completed frame count `txFrames`, and the
 brightness-scaled `lastRed`, `lastGreen`, `lastBlue` of the last completed frame.
+
+`lightEnabled` reports the current power setting, including at zero brightness.
+Sending only `enabled` in `light.set` preserves the last color, brightness, speed and effect.
+
+`callLight` reports the stored RGB call preset (red, green, blue, brightness, effect and speed).
+A successful `preset.save` reply includes the preset after NVS commit. Older firmware may omit it.
 
 `network.configure` accepts payload `mode`: `usb`, `ap`, or `router`.
 For router mode, optional `ssid` and `password` must be supplied together;
@@ -112,11 +118,15 @@ Our bounded event parser is implemented independently; no libgphoto2 dependency.
 
 Experimental `camera.prepareFocus` reads native AF/JPEG geometry from a single
 Canon Live View frame and restores the original EVF output. `camera.focusPoint`
-accepts normalized top-left `x`, `y` in `[0,1]`, only with valid geometry. The
+accepts normalized top-left `x`, `y` in `[0,1]`, only with valid geometry.
+The controller selects the point, starts AF, then releases AF after one second.
+All three operations must succeed for the command to return `accepted`. The
 Mac client excludes letterboxing and rejects mismatched preview aspect ratios.
-On the current M6 II setup, direct frame/property requests yielded no usable
-geometry, and EVF output 3 and 2 both returned DeviceBusy (`0x2019`). Click AF
-therefore remains blocked, not verified. Advertised operations include TouchAF,
+The Mac briefly marks the clicked position on the preview. The mark indicates
+the requested point. Optical focus lock requires separate confirmation.
+The M6 II has reported a 6960×4623 AF grid and a 1024×576 Live View frame.
+In earlier sessions EVF outputs 3 and 2 returned DeviceBusy (`0x2019`).
+Advertised operations include TouchAF,
 GetViewFinderData and KeepDeviceOn, but not PowerDown or Initiate/TerminateViewfinder.
 No automatic camera sleep/wake is enabled. KeepDeviceOn alone is not proof of wake.
 Bench-only `camera.testEvfOff` now tests libgphoto2's EOS viewfinder-off fallback

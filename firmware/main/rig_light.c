@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "driver/gpio.h"
-#include "driver/rmt_encoder.h"
-#include "driver/rmt_tx.h"
+#include "driver/spi_master.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -20,7 +20,9 @@
 // IO17 is not shared with the display, SD card, USB host, or CH340 UART.
 #define LIGHT_RGB_GPIO GPIO_NUM_17
 #define LIGHT_RGB_PIXELS 55
-#define LIGHT_RMT_RESOLUTION_HZ 20000000U
+#define LIGHT_SPI_HZ 3200000
+#define LIGHT_PIXEL_BYTES 12
+#define LIGHT_RESET_BYTES 128  // 320 microseconds low at 3.2 MHz
 
 typedef struct {
     uint32_t magic;
@@ -34,104 +36,61 @@ static light_command_t s_command;
 static light_frame_t s_frame;
 static stored_preset_t s_presets[LIGHT_PRESET_COUNT];
 static uint8_t s_active_preset;
-static rmt_channel_handle_t s_rgb_channel;
-static rmt_encoder_handle_t s_rgb_encoder;
+static spi_device_handle_t s_rgb_spi;
+// Four leading zero bytes keep DIN low while MOSI becomes active.
+static DMA_ATTR uint8_t s_rgb_data[4 + LIGHT_RGB_PIXELS * LIGHT_PIXEL_BYTES + LIGHT_RESET_BYTES];
 static bool s_rgb_ready;
 static uint32_t s_tx_frames;
 static light_frame_t s_last_tx;
 // Send boot OFF and let an explicit command refresh a separately powered strip.
 static bool s_refresh_pending = true;
 
-// Each RMT tick is 50 ns. Both symbols last 1.25 us (800 kbit/s).
-static const rmt_symbol_word_t s_ws2812_zero = {
-    .level0 = 1, .duration0 = 7, .level1 = 0, .duration1 = 18,
-};
-static const rmt_symbol_word_t s_ws2812_one = {
-    .level0 = 1, .duration0 = 13, .level1 = 0, .duration1 = 12,
-};
-static const rmt_symbol_word_t s_ws2812_reset = {
-    .level0 = 0, .duration0 = 3200, .level1 = 0, .duration1 = 3200,
-};
-
-RMT_ENCODER_FUNC_ATTR
-static size_t encode_ws2812(const void *data, size_t data_size,
-                            size_t symbols_written, size_t symbols_free,
-                            rmt_symbol_word_t *symbols, bool *done, void *arg)
-{
-    (void)arg;
-    if (data_size != 3) {
-        *done = true;
-        return 0;
-    }
-    const size_t bits = 24;
-    const size_t data_symbols = LIGHT_RGB_PIXELS * bits;
-    const size_t total = data_symbols + 1;
-    size_t out = 0;
-    while (out < symbols_free && symbols_written + out < total) {
-        size_t position = symbols_written + out;
-        size_t bit = position % bits;
-        if (position == data_symbols) {
-            symbols[out] = s_ws2812_reset;
-        } else {
-            uint8_t value = ((const uint8_t *)data)[bit / 8];
-            symbols[out] = (value & (0x80U >> (bit % 8))) ? s_ws2812_one : s_ws2812_zero;
-        }
-        out++;
-    }
-    *done = symbols_written + out == total;
-    return out;
-}
-
 static esp_err_t init_rgb_output(void)
 {
-    if (s_rgb_channel && s_rgb_encoder) return ESP_OK;
+    if (s_rgb_spi) return ESP_OK;
     if (!rig_light_probe_release()) return ESP_ERR_INVALID_STATE;
-
-    const rmt_tx_channel_config_t channel_config = {
-        .gpio_num = LIGHT_RGB_GPIO,
-        .clk_src = RMT_CLK_SRC_DEFAULT,
-        .resolution_hz = LIGHT_RMT_RESOLUTION_HZ,
-        .mem_block_symbols = 128,
-        .trans_queue_depth = 2,
-        .flags.init_level = 0,
+    spi_bus_config_t bus = {
+        .mosi_io_num = LIGHT_RGB_GPIO, .miso_io_num = -1, .sclk_io_num = -1,
+        .quadwp_io_num = -1, .quadhd_io_num = -1,
+        .max_transfer_sz = sizeof(s_rgb_data),
     };
-    esp_err_t error = rmt_new_tx_channel(&channel_config, &s_rgb_channel);
+    // SPI2 serves the LCD. SPI3 streams the whole strip without CPU refills.
+    esp_err_t error = spi_bus_initialize(SPI3_HOST, &bus, SPI_DMA_CH_AUTO);
     if (error != ESP_OK) return error;
-
-    // Keep DATA biased toward ground when the output is not actively driving.
-    // Do not reset the GPIO or change its direction here: RMT owns its matrix route.
-    error = gpio_set_pull_mode(LIGHT_RGB_GPIO, GPIO_PULLDOWN_ONLY);
+    spi_device_interface_config_t device = {
+        .clock_speed_hz = LIGHT_SPI_HZ, .spics_io_num = -1, .queue_size = 1,
+    };
+    error = spi_bus_add_device(SPI3_HOST, &device, &s_rgb_spi);
+    if (error == ESP_OK) error = gpio_set_pull_mode(LIGHT_RGB_GPIO, GPIO_PULLDOWN_ONLY);
     if (error == ESP_OK) {
         light_output_status_t output = rig_light_get_output_status();
         if (!output.valid || !output.pull_down || output.pull_up) error = ESP_ERR_INVALID_STATE;
     }
-
-    const rmt_simple_encoder_config_t encoder_config = {
-        .callback = encode_ws2812,
-        .min_chunk_size = 1,
-    };
-    if (error == ESP_OK) error = rmt_new_simple_encoder(&encoder_config, &s_rgb_encoder);
-    if (error == ESP_OK) error = rmt_enable(s_rgb_channel);
     if (error != ESP_OK) {
-        if (s_rgb_encoder) rmt_del_encoder(s_rgb_encoder);
-        if (s_rgb_channel) rmt_del_channel(s_rgb_channel);
-        s_rgb_encoder = NULL;
-        s_rgb_channel = NULL;
-        return error;
+        if (s_rgb_spi) spi_bus_remove_device(s_rgb_spi);
+        s_rgb_spi = NULL;
+        spi_bus_free(SPI3_HOST);
     }
-    return ESP_OK;
+    return error;
 }
 
 static esp_err_t send_rgb(uint8_t red, uint8_t green, uint8_t blue)
 {
-    const uint8_t frame[] = {green, red, blue};
-    const rmt_transmit_config_t config = {
-        .loop_count = 0,
-        .flags.eot_level = 0,
-    };
-    esp_err_t error = rmt_transmit(s_rgb_channel, s_rgb_encoder, frame, sizeof(frame), &config);
-    if (error != ESP_OK) return error;
-    error = rmt_tx_wait_all_done(s_rgb_channel, -1);
+    const uint8_t grb[] = {green, red, blue};
+    uint8_t pixel[LIGHT_PIXEL_BYTES];
+    size_t index = 0;
+    for (size_t channel = 0; channel < sizeof(grb); channel++) {
+        // Each WS2812 bit occupies four SPI bits: 1000 for zero, 1100 for one.
+        for (int shift = 6; shift >= 0; shift -= 2) {
+            static const uint8_t pairs[] = {0x88, 0x8c, 0xc8, 0xcc};
+            pixel[index++] = pairs[(grb[channel] >> shift) & 3];
+        }
+    }
+    for (size_t i = 0; i < LIGHT_RGB_PIXELS; i++) {
+        memcpy(s_rgb_data + 4 + i * sizeof(pixel), pixel, sizeof(pixel));
+    }
+    spi_transaction_t tx = {.length = sizeof(s_rgb_data) * 8, .tx_buffer = s_rgb_data};
+    esp_err_t error = spi_device_transmit(s_rgb_spi, &tx);
     if (error == ESP_OK) {
         xSemaphoreTake(s_lock, portMAX_DELAY);
         s_tx_frames++;
@@ -152,7 +111,7 @@ static light_command_t default_command(uint8_t slot)
         {.enabled=true, .mode=LIGHT_WHITE_NEUTRAL, .brightness=70, .warm=65, .cool=65, .speed=40, .effect=LIGHT_EFFECT_SOLID},
         {.enabled=true, .mode=LIGHT_WHITE_WARM, .brightness=55, .warm=100, .cool=15, .speed=40, .effect=LIGHT_EFFECT_SOLID},
         {.enabled=true, .mode=LIGHT_WHITE_COOL, .brightness=65, .warm=15, .cool=100, .speed=40, .effect=LIGHT_EFFECT_SOLID},
-        {.enabled=true, .mode=LIGHT_RGB, .brightness=45, .red=255, .green=120, .blue=35, .speed=35, .effect=LIGHT_EFFECT_SOLID},
+        {.enabled=true, .mode=LIGHT_RGB, .brightness=45, .red=255, .green=255, .blue=255, .speed=35, .effect=LIGHT_EFFECT_SOLID},
         {.enabled=true, .mode=LIGHT_RGB, .brightness=45, .red=40, .green=90, .blue=255, .speed=30, .effect=LIGHT_EFFECT_BREATHE},
         {.enabled=true, .mode=LIGHT_RGB, .brightness=40, .red=255, .speed=35, .effect=LIGHT_EFFECT_RAINBOW},
     };
@@ -162,7 +121,7 @@ static light_command_t default_command(uint8_t slot)
 static void init_presets(void)
 {
     static const char *names[LIGHT_PRESET_COUNT] = {
-        "Call neutral", "Warm", "Cool", "Sunset", "Breathe", "Rainbow"
+        "Call neutral", "Warm", "Cool", "Call", "Breathe", "Rainbow"
     };
     nvs_handle_t nvs;
     bool nvs_ready = nvs_open(LIGHT_NVS_NAMESPACE, NVS_READONLY, &nvs) == ESP_OK;
@@ -301,6 +260,14 @@ bool rig_light_apply(const light_command_t *command)
     snprintf(label, sizeof(label), "%s %u", command->enabled ? rig_light_effect_name(command->effect) : "OFF", command->brightness);
     rig_state_set_test(label);
     return true;
+}
+
+light_command_t rig_light_get_call_preset(void)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    light_command_t command = s_presets[LIGHT_CALL_PRESET].command;
+    xSemaphoreGive(s_lock);
+    return command;
 }
 
 bool rig_light_apply_preset(uint8_t slot)

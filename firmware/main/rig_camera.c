@@ -54,7 +54,7 @@ const char *rig_camera_submit(const char *id, camera_action_t action, uint32_t p
         action == CAMERA_TEST_TERMINATE_LV || action == CAMERA_TEST_EVF_MODE_OFF ? !strcmp(state.camera_info.model, "Canon EOS M6 Mark II") && state.camera_can_set :
         action == CAMERA_TEST_REMOTE_OFF || action == CAMERA_TEST_REMOTE_ON ? !strcmp(state.camera_info.model, "Canon EOS M6 Mark II") :
         action == CAMERA_AF_CANCEL ? state.camera_can_cancel_af : action == CAMERA_FOCUS_STEP ? state.camera_can_focus_step :
-        action == CAMERA_PREPARE_AF || action == CAMERA_AF_POINT ? (state.camera_extra_operations & 3) == 3 :
+        action == CAMERA_PREPARE_AF || action == CAMERA_AF_POINT ? (state.camera_extra_operations & 3) == 3 && state.camera_can_af && state.camera_can_cancel_af :
         action == CAMERA_TEST_EVF_OFF || action == CAMERA_RECOVER_VIDEO || action == CAMERA_HOLD_EVF_OFF ? !strcmp(state.camera_info.model, "Canon EOS M6 Mark II") && state.camera_can_set :
         action == CAMERA_PAUSE_POLLING || action == CAMERA_WAKE ?
             !strcmp(state.camera_info.model, "Canon EOS M6 Mark II") && (state.camera_extra_operations & 4) : false;
@@ -324,6 +324,7 @@ static void execute_command(const camera_command_t *command)
     }
     size_t length;
     bool ok;
+    const char *operation_name = "command";
     if (command->action == CAMERA_TEST_EVF_OFF || command->action == CAMERA_HOLD_EVF_OFF) {
         // Explicit bench test, never called by presence automation. libgphoto2's
         // EOS viewfinder-off fallback is EVFOutputDevice=0. This controls output,
@@ -433,7 +434,18 @@ static void execute_command(const camera_command_t *command)
     } else if (command->action == CAMERA_AF_POINT) {
         uint32_t args[] = {3, (uint32_t)((uint64_t)command->property * (state.camera_af_width - 1) / 10000),
                               (uint32_t)((uint64_t)command->value * (state.camera_af_height - 1) / 10000)};
+        operation_name = "AF position";
         ok = transaction(0x915b, s_transaction_id++, args, 3, payload, PTP_BUFFER_SIZE, &length);
+        if (ok) {
+            operation_name = "AF start";
+            ok = transaction(0x9154, s_transaction_id++, NULL, 0, payload, PTP_BUFFER_SIZE, &length);
+            if (ok) {
+                // Finish this one-shot on the board even if the requesting Mac disconnects.
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                operation_name = "AF release";
+                ok = transaction(0x9160, s_transaction_id++, NULL, 0, payload, PTP_BUFFER_SIZE, &length);
+            }
+        }
     } else {
         uint16_t operation = command->action == CAMERA_AF ? 0x9154 : command->action == CAMERA_AF_CANCEL ? 0x9160 : 0x9155;
         ok = transaction(operation, s_transaction_id++, &command->value,
@@ -442,7 +454,7 @@ static void execute_command(const camera_command_t *command)
     if (!ok) {
         if (!s_response) { camera_read_fault(); message = "USB/PTP failure; reconnect camera before retry"; }
         else {
-            snprintf(detail, sizeof(detail), "Canon rejected command: PTP 0x%04x", s_response);
+            snprintf(detail, sizeof(detail), "Canon rejected %s: PTP 0x%04x", operation_name, s_response);
             message = detail;
         }
         goto finished;
@@ -452,6 +464,9 @@ static void execute_command(const camera_command_t *command)
     for (int attempt = 0; attempt < 4; attempt++) {
         if (!poll_eos(payload)) { camera_read_fault(); message = "Command accepted; readback failed"; goto finished; }
         if (command->action != CAMERA_SET) {
+            if (command->action == CAMERA_AF_POINT) {
+                result = "accepted"; message = "Touch AF position, AF start and release accepted"; goto finished;
+            }
             result = "accepted"; message = "Focus command accepted (not a focus-lock confirmation)"; goto finished;
         }
         if (property->known && property->value == command->value) {

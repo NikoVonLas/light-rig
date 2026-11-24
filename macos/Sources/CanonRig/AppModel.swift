@@ -3,6 +3,13 @@ import CanonRigCore
 import Combine
 import Foundation
 
+enum RigWindowTab: String, CaseIterable {
+    case camera = "Камера"
+    case settings = "Настройки"
+
+    var icon: String { self == .camera ? "video" : "gearshape" }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     let client = RigClient()
@@ -18,9 +25,26 @@ final class AppModel: ObservableObject {
     private var clientUpdates: AnyCancellable?
     private let lightUpdates = LiveUpdateScheduler()
 
-    @Published var capture = CaptureSnapshot(microphoneApps: [], activeCameras: [], runningMeetingApps: [])
+    @Published private(set) var windowTab = RigWindowTab.camera
+
+    func selectTab(_ tab: RigWindowTab) {
+        guard windowTab != tab else { return }
+        windowTab = tab
+        mainWindow?.selectTab(tab)
+        syncPreviewWithWindow()
+    }
+
+    private var videoIsActive = false
     @Published var onCall = false
-    @Published var automatic = true
+    @Published var automatic = UserDefaults.standard.object(forKey: "automaticCallLight") as? Bool ?? true {
+        didSet {
+            guard oldValue != automatic else { return }
+            UserDefaults.standard.set(automatic, forKey: "automaticCallLight")
+            lightUpdates.cancel()
+            if automatic && onCall, let preset = client.state.callLight { restoreLightEditor(preset) }
+            reportPresence()
+        }
+    }
     @Published var lightBrightness = 50 { didSet { if oldValue != lightBrightness { scheduleLightUpdate() } } }
     @Published var lightColorMode = LightColorMode.rgb {
         didSet {
@@ -30,22 +54,22 @@ final class AppModel: ObservableObject {
         }
     }
     @Published var lightKelvin = 4500 { didSet { if oldValue != lightKelvin { scheduleLightUpdate() } } }
-    @Published var wheel = WheelSelection(hue: 85.0 / (220 * 6), saturation: 220.0 / 255) {
+    @Published var wheel = WheelSelection(hue: 0, saturation: 0) {
         didSet { if oldValue != wheel { scheduleLightUpdate() } }
     }
     var usesAnimatedColors: Bool { lightEffect == "rainbow" || lightEffect == "color_cycle" }
     var lightColor: LightRGB { lightColorMode == .temperature ? .white(kelvin: lightKelvin) : wheel.rgb }
     @Published var lightEffect = "solid" { didSet { if oldValue != lightEffect { scheduleLightUpdate() } } }
     @Published var lightSpeed = 40 { didSet { if oldValue != lightSpeed { scheduleLightUpdate() } } }
-    private var callPresetSlot = 3
-    @Published var deviceNetworkMode = "router"
+    private let callPresetSlot = 3
+    private var loadedLight: RigState.CallLight?
+    private var loadedLightDevice = ""
+    private var restoringLight = false
     @Published var routerSSID = ""
     @Published var routerPassword = ""
     @Published private(set) var previewEnabled = false
-    @Published var profileNotice: String?
 
     init() {
-        CanonRigApplicationDelegate.model = self
         Task { [weak self] in self?.openMainWindow() }
         clientUpdates = client.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
@@ -71,11 +95,23 @@ final class AppModel: ObservableObject {
                               setup: client.networkSetupStatus) {
             presentOnboarding()
         }
-        capture = detector.sample()
-        presenceCall.update(rawActive: capture.rawCallActive)
+        videoIsActive = detector.videoIsActive
+        presenceCall.update(rawActive: videoIsActive)
+        if onCall != presenceCall.isOnCall { lightUpdates.cancel() }
         onCall = presenceCall.isOnCall
+        if client.isConnected, let saved = client.state.callLight {
+            if saved != loadedLight || client.state.deviceID != loadedLightDevice {
+                restoreLightEditor(saved)
+                loadedLight = saved
+                loadedLightDevice = client.state.deviceID
+            }
+        } else { loadedLight = nil }
+        reportPresence()
+    }
+
+    private func reportPresence() {
         if client.isConnected && client.state.supportsPresence {
-            client.send(reporter.envelope(onCall: onCall, cameraInCall: capture.rawCallActive,
+            client.sendPresence(reporter.envelope(onCall: onCall, cameraInCall: videoIsActive,
                                           automatic: automatic && onboarding.step == nil, preview: previewEnabled))
         }
     }
@@ -103,6 +139,7 @@ final class AppModel: ObservableObject {
     }
 
     func restartTour() {
+        selectTab(.camera)
         onboarding.replayTour(deviceID: client.isConnected ? client.state.deviceID : "")
         onboardingWindow?.hideForApplication()
         openMainWindow()
@@ -137,18 +174,14 @@ final class AppModel: ObservableObject {
     }
 
     func enterApplication(withTour: Bool) {
+        selectTab(.camera)
         if withTour { onboarding.startTour() } else { onboarding.complete() }
         onboardingWindow?.hideForApplication()
         openMainWindow()
     }
 
-    func configureDeviceNetwork() {
-        client.configureNetwork(mode: deviceNetworkMode, ssid: routerSSID, password: routerPassword)
-        routerPassword = "" // Never persist router credentials on the Mac.
-    }
-
     func syncPreviewWithWindow() {
-        guard let window = mainWindow?.window,
+        guard windowTab == .camera, let window = mainWindow?.window,
               window.isVisible, !window.isMiniaturized, !NSApp.isHidden else {
             stopPreview()
             return
@@ -165,16 +198,37 @@ final class AppModel: ObservableObject {
     }
 
 
-    func applyLight(enabled: Bool = true) {
+    func toggleLightPower() {
+        lightUpdates.cancel()
+        client.toggleLightPower()
+    }
+
+    private func applyLight() {
         lightUpdates.cancel()
         let color = lightColor
-        client.setLight(enabled: enabled, brightness: lightBrightness, mode: "rgb",
+        client.setLight(enabled: true, brightness: lightBrightness, mode: "rgb",
                         red: color.red, green: color.green, blue: color.blue,
                         effect: lightEffect, speed: lightSpeed)
     }
 
+    private func restoreLightEditor(_ preset: RigState.CallLight) {
+        lightUpdates.cancel()
+        restoringLight = true
+        defer { restoringLight = false }
+        let color = LightRGB(red: preset.red, green: preset.green, blue: preset.blue)
+        lightEffect = preset.effect
+        if !usesAnimatedColors, let kelvin = stride(from: LightRGB.kelvinRange.lowerBound,
+            through: LightRGB.kelvinRange.upperBound, by: 100).first(where: { LightRGB.white(kelvin: $0) == color }) {
+            lightKelvin = kelvin
+            lightColorMode = .temperature
+        } else { lightColorMode = .rgb }
+        wheel = WheelSelection(color: color)
+        lightBrightness = preset.brightness
+        lightSpeed = preset.speed
+    }
+
     private func scheduleLightUpdate() {
-        guard client.isConnected else { return }
+        guard !restoringLight, client.isConnected else { return }
         lightUpdates.schedule { [weak self] in
             guard let self, self.client.isConnected else { return }
             self.applyLight()
@@ -182,12 +236,11 @@ final class AppModel: ObservableObject {
     }
 
     func saveLightPreset() {
-        guard client.isConnected else { profileNotice = "Сначала подключись к LightController"; return }
+        guard client.isConnected else { return }
         let color = lightColor
         client.saveLightPreset(slot: callPresetSlot, name: "Созвон", enabled: true,
                                brightness: lightBrightness, mode: "rgb",
                                red: color.red, green: color.green, blue: color.blue,
                                warm: 65, cool: 65, effect: lightEffect, speed: lightSpeed)
-        profileNotice = "Профиль света «Созвон» отправлен на LightController"
     }
 }

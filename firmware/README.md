@@ -57,7 +57,7 @@ The macOS app edits these fields and sends `light.set`, `preset.save`, and
 
 RGB DATA uses **GPIO17 / IO17** connected to the strip's DIN, with common
 ground. The WS2812B RGB backend sends 55 identical 24-bit GRB pixels
-at 800 kbit/s and latches them with 320 µs low. The output starts off.
+in one SPI3 DMA transfer at 800 kbit/s and latches them with 320 µs low. The output starts off.
 A steady color stays latched until the next light command. Reapplying a
 command or preset refreshes the strip after a separate power cycle.
 Effects transmit each time the rendered RGB values change.

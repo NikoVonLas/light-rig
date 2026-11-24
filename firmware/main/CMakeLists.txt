@@ -17,6 +17,7 @@ idf_component_register(
     REQUIRES
         app_update
         esp_http_server
+        esp_driver_spi
         esp_driver_rmt
         esp_driver_uart
         esp_hal_usb

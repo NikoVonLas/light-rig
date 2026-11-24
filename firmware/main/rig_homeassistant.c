@@ -1,3 +1,4 @@
+#include "esp_attr.h"
 #include "rig_homeassistant.h"
 #include "rig_presence.h"
 #include "rig_state.h"
@@ -24,7 +25,7 @@ typedef struct {
     ha_config_t config;
     char user[65], password[129], ca[3073];
 } ha_settings_t;
-static ha_settings_t s_settings;
+static EXT_RAM_BSS_ATTR ha_settings_t s_settings;
 static unsigned s_revision;
 static SemaphoreHandle_t s_lock;
 static EventGroupHandle_t s_events;
@@ -207,7 +208,7 @@ static void mqtt_task(void *arg) {
             }
             char uri[180]; snprintf(uri, sizeof(uri), "%s://%s:%u", config.tls ? "mqtts" : "mqtt", config.host, config.port);
             // The MQTT library borrows the certificate until its client is destroyed.
-            static char active_ca[sizeof(s_settings.ca)];
+            static EXT_RAM_BSS_ATTR char active_ca[sizeof(s_settings.ca)];
             xSemaphoreTake(s_lock, portMAX_DELAY);
             bool current_config = current == s_revision;
             strlcpy(active_ca, s_settings.ca, sizeof(active_ca));
