@@ -90,6 +90,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         NSApp.activate(ignoringOtherApps: true)
         model?.syncPreviewWithWindow()
     }
+    func windowDidChangeOcclusionState(_ notification: Notification) { model?.syncPreviewWithWindow() }
+
     func windowDidDeminiaturize(_ notification: Notification) { model?.syncPreviewWithWindow() }
 
     func windowDidMiniaturize(_ notification: Notification) { model?.stopPreview() }

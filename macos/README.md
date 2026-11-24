@@ -52,8 +52,8 @@ Only explicit skip/finish persists completion per board; closing an unfinished
 window suppresses it for this launch. Settings can replay the tour over USB, Wi-Fi, or without a connected board.
 An offline tour does not mark any board as configured.
 The menu bar and wizard share a single native main-window controller, so starting
-the tour also works when the main window has never been opened. Launching or
-reopening the app brings up the control window.
+the tour also works when the main window has never been opened. The app starts in the menu bar. Open the control window from the menu or by
+reopening the running app.
 
 For first setup, connect the board's built-in USB-C to the Mac, enter the 2.4 GHz
 Wi-Fi SSID and password under Network, and save. LightController stores these in NVS and
@@ -64,8 +64,8 @@ stored on the Mac. No Mac network settings are changed; to use the board's AP,
 join that network manually. USB stays available in every board network mode.
 Close serial monitors before using USB, and close the app before flashing.
 
-Opening or restoring the control window starts the Cam Link preview. Closing or
-minimizing it, or hiding the app, releases the capture input. The main view is a video monitor: exposure controls overlay the bottom
+The visible Camera tab starts the Cam Link preview. Closing, minimizing or fully
+covering the window, switching to Settings, or hiding the app releases the input. The main view is a video monitor: exposure controls overlay the bottom
 of the frame; focus/light panels open from the upper corners. Connection and
 call-detection diagnostics are in a settings sheet instead of around the frame.
 Camera controls now offer immediate selection of ISO, shutter, aperture, AF area
@@ -91,7 +91,7 @@ Build the signed local app bundle:
 ../scripts/build_macos_app.sh
 ```
 
-The result is `.build/app/Canon Rig.app`. On first launch macOS asks for camera
+The result is `.build/app/Canon Rig.app`. When the preview is first opened, macOS asks for camera
 permission; this is required for the direct Cam Link preview. The microphone is
 not recorded: the app only reads CoreAudio process activity for diagnostics.
 

@@ -78,7 +78,6 @@ final class AppModel: ObservableObject {
     @Published private(set) var previewEnabled = false
 
     init() {
-        Task { [weak self] in self?.openMainWindow() }
         clientUpdates = client.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
@@ -196,15 +195,22 @@ final class AppModel: ObservableObject {
         openMainWindow()
     }
 
+    private var previewIsVisible: Bool {
+        guard windowTab == .camera, let window = mainWindow?.window else { return false }
+        return window.isVisible && !window.isMiniaturized && !NSApp.isHidden
+            && window.occlusionState.contains(.visible)
+    }
+
     func syncPreviewWithWindow() {
-        guard windowTab == .camera, let window = mainWindow?.window,
-              window.isVisible, !window.isMiniaturized, !NSApp.isHidden else {
+        guard previewIsVisible else {
             stopPreview()
             return
         }
         guard !previewEnabled else { return }
         previewEnabled = true
-        preview.start()
+        preview.start { [weak self] in
+            self?.previewIsVisible == true
+        }
     }
 
     func stopPreview() {

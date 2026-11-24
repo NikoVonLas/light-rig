@@ -11,7 +11,7 @@ final class CameraPreviewController: NSObject, ObservableObject, @unchecked Send
     // Accessed only on the capture queue. A late permission reply must not reopen the input.
     private var requestID: UUID?
 
-    func start() {
+    func start(whileVisible isVisible: @escaping @MainActor @Sendable () -> Bool) {
         queue.async {
             let id = UUID()
             self.requestID = id
@@ -21,10 +21,13 @@ final class CameraPreviewController: NSObject, ObservableObject, @unchecked Send
                 self.configureAndStart()
             case .notDetermined:
                 AVCaptureDevice.requestAccess(for: .video) { allowed in
-                    self.queue.async {
-                        guard self.requestID == id else { return }
-                        if allowed { self.configureAndStart() }
-                        else { self.publish(status: "Разрешите доступ к камере в настройках macOS") }
+                    Task { @MainActor in
+                        guard isVisible() else { return }
+                        self.queue.async {
+                            guard self.requestID == id else { return }
+                            if allowed { self.configureAndStart() }
+                            else { self.publish(status: "Разрешите доступ к камере в настройках macOS") }
+                        }
                     }
                 }
             case .denied, .restricted:
