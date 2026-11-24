@@ -31,6 +31,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         tabs.target = self
         tabs.action = #selector(chooseTab(_:))
         tabs.setAccessibilityLabel("Раздел окна")
+        tabs.segmentDistribution = .fit
+        let horizontalPadding: CGFloat = 24
         for (index, tab) in RigWindowTab.allCases.enumerated() {
             tabs.setLabel(tab.rawValue, forSegment: index)
             let image = NSImage(systemSymbolName: tab.icon, accessibilityDescription: nil)?
@@ -39,9 +41,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             tabs.setImageScaling(.scaleProportionallyDown, forSegment: index)
             tabs.setToolTip(tab.rawValue, forSegment: index)
             let titleWidth = (tab.rawValue as NSString).size(withAttributes: [.font: tabFont]).width
-            tabs.setWidth(ceil(titleWidth) + 42, forSegment: index)
+            let iconWidth = image.map { ceil($0.size.width) + 8 } ?? 0
+            tabs.setWidth(ceil(titleWidth) + iconWidth + 2 * horizontalPadding, forSegment: index)
         }
         tabs.sizeToFit()
+        tabs.setContentCompressionResistancePriority(.required, for: .horizontal)
+        tabs.widthAnchor.constraint(greaterThanOrEqualToConstant: tabs.fittingSize.width).isActive = true
         let toolbar = NSToolbar(identifier: "CanonRigMainNavigation")
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
