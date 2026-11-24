@@ -4,11 +4,12 @@ import SwiftUI
 
 struct RigHeaderIcon: View {
     let onCall: Bool
+    var size: CGFloat = 23
 
     var body: some View {
-        Image(systemName: onCall ? "video.fill" : "video")
-            .font(.system(size: 23, weight: .medium))
-            .foregroundStyle(onCall ? Color.red : .secondary)
+        Image(nsImage: CameraStatusImage.make(onAir: onCall, configuration: .init(pointSize: size, weight: .medium),
+                                               outlineColor: .secondaryLabelColor))
+            .foregroundStyle(.secondary)
             .accessibilityHidden(true)
     }
 }
@@ -45,7 +46,11 @@ struct MenuBarContent: View {
                         .labelsHidden().toggleStyle(.switch).controlSize(.small)
                         .help("Включать подсветку автоматически во время созвона")
                 }
-                Label(model.onCall ? "На созвоне" : "Свободен", systemImage: model.onCall ? "video.fill" : "video")
+                Label {
+                    Text(model.onCall ? "На созвоне" : "Свободен")
+                } icon: {
+                    RigHeaderIcon(onCall: model.onCall, size: NSFont.smallSystemFontSize)
+                }
                     .font(.caption).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 14).padding(.vertical, 10)

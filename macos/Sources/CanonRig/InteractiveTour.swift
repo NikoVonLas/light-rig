@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CanonRigCore
 import SwiftUI
 
@@ -6,6 +7,7 @@ import SwiftUI
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate {
     private weak var model: AppModel?
+    private var callObservation: AnyCancellable?
     private let tabs = NSSegmentedControl()
     private let navigationID = NSToolbarItem.Identifier("rig.navigation")
 
@@ -43,6 +45,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             let titleWidth = (tab.rawValue as NSString).size(withAttributes: [.font: tabFont]).width
             let iconWidth = image.map { ceil($0.size.width) + 8 } ?? 0
             tabs.setWidth(ceil(titleWidth) + iconWidth + 2 * horizontalPadding, forSegment: index)
+        }
+        if let cameraIndex = RigWindowTab.allCases.firstIndex(of: .camera) {
+            callObservation = model.$onCall.removeDuplicates().sink { [weak self] active in
+                let icon = CameraStatusImage.make(onAir: active, configuration: .init(pointSize: 12, weight: .medium))
+                self?.tabs.setImage(icon, forSegment: cameraIndex)
+            }
         }
         tabs.sizeToFit()
         tabs.setContentCompressionResistancePriority(.required, for: .horizontal)

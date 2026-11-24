@@ -102,7 +102,7 @@ final class StatusMenuController: NSObject {
         item.button?.action = #selector(toggle)
         iconUpdates = model.$onCall.removeDuplicates().sink { [weak self] onCall in
             let button = self?.item.button
-            button?.image = onCall ? CanonRigApp.onCallIcon : NSImage(systemSymbolName: "video", accessibilityDescription: nil)
+            button?.image = CameraStatusImage.make(onAir: onCall)
             button?.setAccessibilityLabel(onCall ? "Light Rig — на созвоне" : "Light Rig — свободен")
         }
         panel.isOpaque = false

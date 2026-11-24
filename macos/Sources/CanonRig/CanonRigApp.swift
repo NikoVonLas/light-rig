@@ -22,19 +22,7 @@ struct CanonRigApp: App {
             }
     }
 
-    // A template status item takes its color from macOS. Keep the active
-    // image in its original colors and let the idle symbol follow the menu bar.
-    static let onCallIcon: NSImage = {
-        let renderer = ImageRenderer(content:
-            Image(systemName: "video.fill")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(.red)
-                .frame(width: 22, height: 18))
-        renderer.scale = 3
-        let image = renderer.nsImage ?? NSImage(systemSymbolName: "video.fill", accessibilityDescription: nil)!
-        image.isTemplate = false
-        return image
-    }()
+
 }
 
 @MainActor
