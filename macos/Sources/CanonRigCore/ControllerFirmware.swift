@@ -215,8 +215,10 @@ public final class ControllerFirmware: ObservableObject {
             }
         }
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 12
-        config.timeoutIntervalForResource = 60
+        // Older ESP32-S2 firmware erases flash synchronously before it reads
+        // the request body, and may spend another interval verifying at the end.
+        config.timeoutIntervalForRequest = 90
+        config.timeoutIntervalForResource = 300
         let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
         legacyUpload = session
         defer {
@@ -234,6 +236,8 @@ public final class ControllerFirmware: ObservableObject {
         try checkConnection(board)
         var request = URLRequest(url: base.appendingPathComponent("api/ota"))
         request.httpMethod = "POST"
+        request.timeoutInterval = 90
+        request.setValue(String(image.bytes.count), forHTTPHeaderField: "Content-Length")
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         defaults.set(image.version, forKey: blockedKey)
         let (reply, response) = try await session.upload(for: request, from: image.bytes)
