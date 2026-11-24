@@ -58,6 +58,7 @@ exe="$app/Contents/MacOS/LightRig"
 lipo -create "$work/LightRig-arm64" "$work/LightRig-x86_64" -output "$exe"
 ditto "$tools/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
 cp "$root/macos/THIRD_PARTY_NOTICES.md" "$tools/LICENSE" "$app/Contents/Resources/"
+cp "$root/macos/Support/LightRig.icns" "$app/Contents/Resources/"
 firmware="$output/Light-Rig-esp32s2.bin"
 if [[ ! -f "$firmware" ]]; then
     firmware="$root/firmware/build/light_rig.bin"

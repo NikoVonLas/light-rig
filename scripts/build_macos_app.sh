@@ -22,6 +22,7 @@ BIN_DIR=$(swift_release --show-bin-path)
 
 "$SCRIPT_DIR/build_firmware.sh"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp "$MACOS_DIR/Support/LightRig.icns" "$APP/Contents/Resources/"
 cp "$PROJECT_DIR/firmware/build/light_rig.bin" "$APP/Contents/Resources/Light-Rig-esp32s2.bin"
 cp "$BIN_DIR/LightRig" "$APP/Contents/MacOS/LightRig"
 cp "$MACOS_DIR/Support/Info.plist" "$APP/Contents/Info.plist"
