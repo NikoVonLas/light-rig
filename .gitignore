@@ -1,0 +1,24 @@
+.DS_Store
+.artifacts/
+dist/
+.venv/
+.toolchains/
+.build/
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+sdkconfig
+sdkconfig.old
+firmware/managed_components/
+
+# Runtime provisioning only; never commit Wi-Fi or pairing credentials.
+firmware/main/rig_secrets.h
+
+__pycache__/
+*.py[cod]
+.env
+.env.*
+*.pem
+*.p12
+*.key

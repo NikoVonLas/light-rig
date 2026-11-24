@@ -1,0 +1,34 @@
+idf_component_register(
+    SRCS
+        "app_main.c"
+        "rig_state.c"
+        "rig_display.c"
+        "rig_button.c"
+        "rig_network.c"
+        "presence_model.c"
+        "rig_presence.c"
+        "rig_homeassistant.c"
+        "rig_light.c"
+        "rig_light_probe.c"
+        "ptp_codec.c"
+        "eos_codec.c"
+        "rig_camera.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        app_update
+        esp_http_server
+        esp_driver_rmt
+        esp_driver_uart
+        esp_hal_usb
+        esp_lcd
+        esp_netif
+        esp_wifi
+        espressif__cjson
+        espressif__mdns
+        espressif__mqtt
+        esp_timer
+        mbedtls
+        bootloader_support
+        nvs_flash
+        espressif__usb
+)

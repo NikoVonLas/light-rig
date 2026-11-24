@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://canonrig.local/schema/wire-v1.json",
+  "title": "Canon Rig wire envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "type", "payload"],
+  "allOf": [
+    {
+      "if": {"properties": {"type": {"const": "presence.update"}}},
+      "then": {"properties": {"payload": {
+        "type": "object", "additionalProperties": false,
+        "required": ["clientId", "name", "session", "sequence", "onCall", "cameraInCall", "automatic", "preview"],
+        "properties": {
+          "clientId": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,36}$"},
+          "session": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,36}$"},
+          "name": {"type": "string", "minLength": 1, "maxLength": 48},
+          "sequence": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "onCall": {"type": "boolean"}, "cameraInCall": {"type": ["boolean", "null"]},
+          "automatic": {"type": "boolean"}, "preview": {"type": "boolean"}
+        }
+      }}}
+    }
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "type": {
+      "type": "string",
+      "enum": [
+        "hello",
+        "heartbeat",
+        "presence.update",
+        "homeassistant.configure",
+        "settings.read",
+        "network.configure",
+        "rig.setState",
+        "camera.set",
+        "camera.autofocus",
+        "camera.autofocusCancel",
+        "camera.focusStep",
+        "camera.prepareFocus",
+        "camera.focusPoint",
+        "preview.start",
+        "preview.stop",
+        "light.set",
+        "light.applyPreset",
+        "light.captureStart",
+        "preset.save",
+        "system.ota",
+        "rig.state",
+        "camera.capabilities",
+        "camera.properties",
+        "light.state",
+        "fault",
+        "ack"
+      ]
+    },
+    "payload": { "type": "object" },
+    "ok": { "type": "boolean" },
+    "error": { "type": "string" },
+    "rebooting": { "type": "boolean" }
+  }
+}
