@@ -1,6 +1,6 @@
 # macOS controller
 
-Native SwiftUI menu-bar application. It discovers `lightrig.local`, controls the
+Native SwiftUI menu-bar application. It discovers the `_canonrig._tcp` Bonjour service, controls the
 rig over WebSocket, and detects calls from public CoreAudio/CoreMediaIO state;
 it never records audio or video.
 
@@ -29,8 +29,16 @@ Automation resends current state after reconnection or being re-enabled.
 Turning automation off leaves manual light control available.
 
 The Mac chooses its connection automatically. It prefers an available USB serial
-connection, then tries the last known router IP, `lightrig.local`, and the Light Rig
-access-point address. Only a valid `rig.state` reply confirms the connection.
+connection, then tries Bonjour services advertised on Wi-Fi and Ethernet.
+The app resolves each service's IPv4 address and port on its advertising interface.
+The WebSocket connection uses that interface instead of the default VPN route.
+If Bonjour is unavailable, the app tries the saved address on physical interfaces,
+then the existing system-route address fallbacks. The app keeps browsing as services
+appear or disappear and reconnects after a failed connection. It saves the router IP
+when the controller reports it in a `rig.state` reply.
+macOS may ask for local-network access; allow it for discovery and control.
+A VPN policy that blocks local traffic, client isolation, or blocked multicast can
+still prevent discovery or connection. The app does not change system routes or VPN settings. Only a valid `rig.state` reply confirms the connection.
 Silent/failed routes have a retry cooldown so they cannot block other routes.
 Plugging in USB takes priority; unplugging it resumes network discovery. Camera
 commands interrupted by a disconnect are never automatically replayed.
@@ -125,3 +133,24 @@ Keep the original signing key in the macOS Keychain or an encrypted backup
 for subsequent releases. Each build derives the public key from this secret.
 The application bundle uses local ad-hoc signing. Apple Developer ID signing
 and notarization are separate from update signing.
+
+## Local-network verification
+
+`swift test --parallel` checks route priority, interface-scoped Bonjour resolution,
+service removal, saved-address fallback, WebSocket messages, connection closure,
+and the client's `rig.state` handshake. Network tests publish temporary Bonjour
+services and require an active Wi-Fi or Ethernet interface. The client integration
+test sends protocol messages over loopback because its server runs on the same Mac.
+It checks the selected physical interface at the transport boundary.
+
+To check a real controller with the current VPN configuration, run:
+
+```sh
+LIGHT_RIG_NETWORK_SMOKE=1 swift test --filter physicalControllerRespondsThroughAdvertisingInterface
+```
+
+This optional check discovers `_canonrig._tcp` and reads `rig.state` through its
+advertising interface. It sends no light, camera, or configuration commands.
+
+Set `LIGHT_RIG_NETWORK_HOST` to a known controller IPv4 address to allow this
+check to use the local-interface fallback when Bonjour is unavailable.

@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 public enum RigConnectionMode: String, CaseIterable, Sendable {
     case automatic, usb, accessPoint, router
@@ -46,6 +47,9 @@ public final class RigClient: ObservableObject {
             if Self.isIPv4Address(host) { defaults.set(host, forKey: "rigLastRouterIP") }
         }
     }
+    private let discovery: LocalRigDiscovery?
+    private let localSocketFactory: (URL, NWInterface) -> LocalWebSocket
+    private var localSocket: LocalWebSocket?
     private var task: URLSessionWebSocketTask?
     private var receiveLoop: Task<Void, Never>?
     private var sendQueue: Task<Void, Never>?
@@ -113,7 +117,7 @@ public final class RigClient: ObservableObject {
                 return
             }
         }
-        if task == nil && serial == nil {
+        if task == nil && localSocket == nil && serial == nil {
             if now().timeIntervalSince(lastAttempt) >= 5 { connect() }
         } else {
             if now().timeIntervalSince(lastReply) > (isConnected ? 10 : 5) {
@@ -127,11 +131,15 @@ public final class RigClient: ObservableObject {
 
     public convenience init(host: String? = nil) {
         self.init(host: host, defaults: .standard, ports: { SerialTransport.ports() },
-                  serialFactory: { SerialTransport() }, now: { Date() })
+                  serialFactory: { SerialTransport() }, now: { Date() }, discovery: LocalRigDiscovery())
     }
 
     init(host: String?, defaults: UserDefaults, ports: @escaping () -> [String],
-         serialFactory: @escaping () -> any RigSerialConnection, now: @escaping () -> Date) {
+         serialFactory: @escaping () -> any RigSerialConnection, now: @escaping () -> Date,
+         discovery: LocalRigDiscovery? = nil,
+         localSocketFactory: @escaping (URL, NWInterface) -> LocalWebSocket = { LocalWebSocket(url: $0, interface: $1) }) {
+        self.localSocketFactory = localSocketFactory
+        self.discovery = discovery
         self.defaults = defaults
         self.portsProvider = ports
         self.serialFactory = serialFactory
@@ -154,16 +162,17 @@ public final class RigClient: ObservableObject {
     }
 
     public func connect() {
+        discovery?.start()
         let target: RigEndpoint?
         switch connectionMode {
         case .automatic:
             let ports = portsProvider()
             selection.observe(ports: ports)
-            target = selection.next(ports: ports, host: host, at: now())
+            target = selection.next(ports: ports, host: host, local: discovery?.routes(for: host) ?? [], at: now())
         case .usb:
             let ports = portsProvider()
             target = serialPath.isEmpty ? (ports.count == 1 ? .usb(ports[0]) : nil) : .usb(serialPath)
-        case .router: target = .network(host)
+        case .router: target = selection.next(ports: [], host: host, local: discovery?.routes(for: host) ?? [], at: now())
         case .accessPoint: target = .network("192.168.4.1")
         }
         guard let target else {
@@ -200,6 +209,36 @@ public final class RigClient: ObservableObject {
                 serial = transport
                 send(WireEnvelope(type: "hello", payload: ["client": .string("macos")]))
             } catch { connectionFailed("USB: \(error.localizedDescription)") }
+            return
+        }
+        if case .local(let host, let port, let name) = target {
+            guard let interface = discovery?.interface(named: name) else {
+                connectionFailed("Локальный сетевой интерфейс недоступен")
+                return
+            }
+            var components = URLComponents()
+            components.scheme = "ws"
+            components.host = host
+            components.port = Int(port)
+            components.path = "/ws"
+            guard let url = components.url else {
+                connectionFailed("Некорректный адрес контроллера")
+                return
+            }
+            activeConnectionMode = host == "192.168.4.1" ? .accessPoint : .router
+            let socket = localSocketFactory(url, interface)
+            let current = generation
+            socket.onMessage = { [weak self] data in
+                guard self?.generation == current else { return }
+                self?.accept(data)
+            }
+            socket.onError = { [weak self] message in
+                guard self?.generation == current else { return }
+                self?.connectionFailed(message)
+            }
+            localSocket = socket
+            socket.start()
+            send(WireEnvelope(type: "hello", payload: ["client": .string("macos")]))
             return
         }
         guard case .network(let address) = target else { return }
@@ -239,6 +278,8 @@ public final class RigClient: ObservableObject {
         sendQueue = nil
         receiveLoop?.cancel()
         receiveLoop = nil
+        localSocket?.cancel()
+        localSocket = nil
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         isConnected = false
@@ -430,6 +471,7 @@ public final class RigClient: ObservableObject {
     public func send(_ envelope: WireEnvelope) {
         guard let data = try? JSONEncoder().encode(envelope) else { return }
         if let serial { serial.send(data); return }
+        if let localSocket { localSocket.send(data); return }
         guard let task, let string = String(data: data, encoding: .utf8) else { return }
         let previous = sendQueue
         let current = generation
