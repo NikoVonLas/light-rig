@@ -3,6 +3,7 @@ import Foundation
 enum RigEndpoint: Hashable {
     case usb(String)
     case network(String)
+    case local(host: String, port: UInt16, interface: String)
 }
 
 /// Tries each reachable route without letting a stale IP or a silent serial
@@ -23,8 +24,9 @@ struct RigConnectionSelection {
         ports.sorted().map(RigEndpoint.usb).first { available($0, at: now) }
     }
 
-    func next(ports: [String], host: String, at now: Date) -> RigEndpoint? {
+    func next(ports: [String], host: String, local: [RigEndpoint] = [], at now: Date) -> RigEndpoint? {
         if let usb = preferredUSB(ports: ports, at: now) { return usb }
+        if let discovered = local.first(where: { available($0, at: now) }) { return discovered }
         let addresses = [host, "lightrig.local", "canonrig.local", "192.168.4.1"]
         return addresses.filter { !$0.isEmpty }.map(RigEndpoint.network)
             .first { available($0, at: now) }
